@@ -118,6 +118,12 @@ def generate_launch_description():
         arguments=['forward_effort_controller'],
     )
 
+    markers_node = Node(
+        package='haptic_controller',
+        executable='markers.py',
+        name='markers_node',
+    )
+
     nodes = [
         control_node,
         rviz_node,
@@ -126,6 +132,7 @@ def generate_launch_description():
         pantograph_mimick_controller_spawner,
         pantograph_mock_motors_controller_spawner,
         effort_controller_spawner,
+        markers_node,
     ]
 
     return LaunchDescription(declared_arguments + nodes)
