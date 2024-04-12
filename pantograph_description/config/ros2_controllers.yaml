@@ -14,8 +14,15 @@ controller_manager:
     pantograph_mock_motors_controller:
       type: pantograph_mimick_controller/PantographMockMotorsController
 
+    pantograph_mock_operator_controller:
+      type: pantograph_mimick_controller/PantographMockOperatorController
+
     forward_effort_controller:
       type: effort_controllers/JointGroupEffortController
+
+    fake_tau_ext_controller:
+      type: effort_controllers/JointGroupEffortController
+
     tool_orientation_controller:
       type: position_controllers/JointGroupPositionController
     panto_position_controller:
@@ -41,6 +48,12 @@ forward_effort_controller:
     joints:
       - panto_a1
       - panto_a5
+
+fake_tau_ext_controller:
+  ros__parameters:
+    joints:
+      - fake_tau_ext_1
+      - fake_tau_ext_5
 
 tool_orientation_controller:
   ros__parameters:

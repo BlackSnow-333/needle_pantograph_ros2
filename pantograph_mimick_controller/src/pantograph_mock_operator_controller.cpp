@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "pantograph_mimick_controller/pantograph_mock_motors_controller.hpp"
+#include "pantograph_mimick_controller/pantograph_mock_operator_controller.hpp"
 #include "pantograph_controller_utils.hpp"
 
 #include <Eigen/Dense>
@@ -38,17 +38,17 @@ using hardware_interface::HW_IF_POSITION;
 using hardware_interface::HW_IF_VELOCITY;
 using hardware_interface::HW_IF_ACCELERATION;
 
-PantographMockMotorsController::PantographMockMotorsController()
-: controller_interface::ControllerInterface()
+PantographMockOperatorController::PantographMockOperatorController()
+: controller_interface::ControllerInterface(), pantograph_model_()
 {
 }
 
-controller_interface::CallbackReturn PantographMockMotorsController::on_init()
+controller_interface::CallbackReturn PantographMockOperatorController::on_init()
 {
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn PantographMockMotorsController::on_configure(
+controller_interface::CallbackReturn PantographMockOperatorController::on_configure(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   std::string prefix = "";
@@ -60,30 +60,38 @@ controller_interface::CallbackReturn PantographMockMotorsController::on_configur
     prefix + "panto_a5"
   };
 
+  fake_sensors_joint_names_ = {
+    prefix + "fake_tau_ext_1",
+    prefix + "fake_tau_ext_5"
+  };
+
+
+  joints_command_subscriber_ = \
+    get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+    "/fake_operator_position",    // "~/operator_desired_position",
+    rclcpp::SystemDefaultsQoS(),
+    [this](const std_msgs::msg::Float64MultiArray::SharedPtr msg)
+    {rt_command_ptr_.writeFromNonRT(msg);});
+
   RCLCPP_INFO(get_node()->get_logger(), "configure successful");
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::InterfaceConfiguration
-PantographMockMotorsController::command_interface_configuration() const
+PantographMockOperatorController::command_interface_configuration() const
 {
   controller_interface::InterfaceConfiguration command_interfaces_config;
   command_interfaces_config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
 
   command_interfaces_config.names.push_back(
-    pantograph_joint_names_[0] + "/" + HW_IF_VELOCITY);
+    fake_sensors_joint_names_[0] + "/" + HW_IF_EFFORT);
   command_interfaces_config.names.push_back(
-    pantograph_joint_names_[4] + "/" + HW_IF_VELOCITY);
-
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[0] + "/" + HW_IF_POSITION);
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[4] + "/" + HW_IF_POSITION);
+    fake_sensors_joint_names_[1] + "/" + HW_IF_EFFORT);
 
   return command_interfaces_config;
 }
 
-controller_interface::InterfaceConfiguration PantographMockMotorsController::
+controller_interface::InterfaceConfiguration PantographMockOperatorController::
 state_interface_configuration()
 const
 {
@@ -91,7 +99,7 @@ const
     controller_interface::interface_configuration_type::ALL};
 }
 
-controller_interface::CallbackReturn PantographMockMotorsController::on_activate(
+controller_interface::CallbackReturn PantographMockOperatorController::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>>
@@ -107,17 +115,22 @@ controller_interface::CallbackReturn PantographMockMotorsController::on_activate
     return controller_interface::CallbackReturn::ERROR;
   }
 
+
+  // reset command buffer if a command came through callback when controller was inactive
+  rt_command_ptr_ = \
+    realtime_tools::RealtimeBuffer<std::shared_ptr<std_msgs::msg::Float64MultiArray>>(nullptr);
+
   RCLCPP_INFO(get_node()->get_logger(), "activate successful");
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn PantographMockMotorsController::on_deactivate(
+controller_interface::CallbackReturn PantographMockOperatorController::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::return_type PantographMockMotorsController::update(
+controller_interface::return_type PantographMockOperatorController::update(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
   for (const auto & state_interface : state_interfaces_) {
@@ -129,44 +142,53 @@ controller_interface::return_type PantographMockMotorsController::update(
       state_interface.get_interface_name().c_str(), state_interface.get_value());
   }
 
-  // Get the previous (active) joint torques
-  double torque_a1 = get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_EFFORT);
-  double torque_a5 = get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_EFFORT);
 
-  // Get external torques
-  double tau_ext_a1 = get_value(name_if_value_mapping_, "fake_tau_ext_1", HW_IF_EFFORT);
-  double tau_ext_a5 = get_value(name_if_value_mapping_, "fake_tau_ext_5", HW_IF_EFFORT);
+  auto operator_position_msg = rt_command_ptr_.readFromRT();
+  // no command received yet
+  if (!operator_position_msg || !(*operator_position_msg)) {
+    command_interfaces_[0].set_value(0.0);
+    command_interfaces_[1].set_value(0.0);
+    return controller_interface::return_type::OK;
+  }
 
-  // Calculate the pantograph (passive) joint acc. from torques
-  double equivalent_joint_inertia = 0.02;  // kg m^2
-  double last_acc_a1 = 1 / equivalent_joint_inertia * (torque_a1 + tau_ext_a1);
-  double last_acc_a5 = 1 / equivalent_joint_inertia * (torque_a5 + tau_ext_a5);
+  Eigen::Vector2d ph = Eigen::Vector2d(
+    (*operator_position_msg)->data[0],
+    (*operator_position_msg)->data[1]
+  );
 
-  // Get the previous (active) joint positions and velocities
-  double last_pos_a1 =
+  // Get the (active) joint positions and velocities
+  double pos_a1 =
     get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_POSITION);
-  double last_vel_a1 =
+  double vel_a1 =
     get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_VELOCITY);
-  double last_pos_a5 =
+  double pos_a5 =
     get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_POSITION);
-  double last_vel_a5 =
+  double vel_a5 =
     get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_VELOCITY);
 
-  // Integrate state variables
-  double dt = period.seconds();
-  double vel_a1 = last_vel_a1 + last_acc_a1 * dt;
-  double pos_a1 = last_pos_a1 + vel_a1 * dt;
-
-  double vel_a5 = last_vel_a5 + last_acc_a5 * dt;
-  double pos_a5 = last_pos_a5 + vel_a5 * dt;
+  Eigen::Vector2d q = Eigen::Vector2d(pos_a1, pos_a5);
+  Eigen::Vector2d q_dot = Eigen::Vector2d(vel_a1, vel_a5);
+  auto J = pantograph_model_.jacobian(q);
+  Eigen::Vector2d p = pantograph_model_.fk(q);
+  Eigen::Vector2d p_dot = J.transpose() * q_dot;
+  double cst = 9;
+  auto tau = J.transpose().inverse() * (
+    cst * (ph - p) - 2 * 0.9 * sqrt(cst) * p_dot
+  );
+  /*
+  std::cout << "\n q = " << q.transpose() << std::endl;
+  std::cout << "P = " << p.transpose() << std::endl;
+  std::cout << "P_h = " << ph.transpose() << std::endl;
+  std::cout << "err P = " << (ph - p).transpose() << std::endl;
+  std::cout << "p_dot = " << p_dot.transpose() << std::endl;
+  std::cout << "J = \n" << J << std::endl;
+  std::cout << "Fc = " << Fc.transpose() << std::endl;
+  std::cout << "tau = " << tau.transpose() << std::endl;
+  */
 
   // write mimics to HW
-  command_interfaces_[0].set_value(vel_a1);
-  command_interfaces_[1].set_value(vel_a5);
-
-  command_interfaces_[2].set_value(pos_a1);
-  command_interfaces_[3].set_value(pos_a5);
-
+  command_interfaces_[0].set_value(tau(0));
+  command_interfaces_[1].set_value(tau(1));
   return controller_interface::return_type::OK;
 }
 
@@ -175,5 +197,5 @@ controller_interface::return_type PantographMockMotorsController::update(
 #include "class_loader/register_macro.hpp"
 
 CLASS_LOADER_REGISTER_CLASS(
-  pantograph_mimick_controller::PantographMockMotorsController,
+  pantograph_mimick_controller::PantographMockOperatorController,
   controller_interface::ControllerInterface)
