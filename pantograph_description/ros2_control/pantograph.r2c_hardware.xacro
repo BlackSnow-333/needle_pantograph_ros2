@@ -23,7 +23,7 @@
           <xacro:unless value="${use_fake_hardware}">
             <plugin>ethercat_driver/EthercatDriver</plugin>
             <param name="master_id">0</param>
-            <param name="control_frequency">100</param>
+            <param name="control_frequency">500</param>
           </xacro:unless>
           </hardware>
       </xacro:unless>
