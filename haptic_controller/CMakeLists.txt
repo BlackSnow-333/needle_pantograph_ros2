@@ -11,11 +11,28 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 # find dependencies
-find_package(ament_cmake REQUIRED)
-find_package(ament_cmake_python REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(rclpy REQUIRED)
-find_package(trajectory_msgs REQUIRED)
+# find_package(ament_cmake REQUIRED)
+# find_package(ament_cmake_python REQUIRED)
+# find_package(rclcpp REQUIRED)
+# find_package(rclpy REQUIRED)
+# find_package(trajectory_msgs REQUIRED)
+
+set(DEPS
+  ament_cmake
+  ament_cmake_python
+  hardware_interface
+  rclcpp
+  rclpy
+  trajectory_msgs
+  tf2_ros
+  tf2_geometry_msgs
+  visualization_msgs
+  geometry_msgs
+)
+
+foreach(Dependency IN ITEMS ${DEPS})
+  find_package(${Dependency} REQUIRED)
+endforeach()
 
 
 if(BUILD_TESTING)
@@ -30,16 +47,21 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-# # Include Cpp "include" directory
-# include_directories(include)
-# # Create Cpp executable
-# add_executable(cpp_executable src/cpp_node.cpp)
-# ament_target_dependencies(cpp_executable rclcpp)
-# # Install Cpp executables
-# install(TARGETS
-#   cpp_executable
-#   DESTINATION lib/${PROJECT_NAME}
-# )
+#-----------------------------------------------------
+#   Cpp setup
+#-----------------------------------------------------
+
+# Include Cpp "include" directory
+include_directories(include)
+
+# Create Cpp executable
+add_executable(error_estimation src/error_estimation.cpp)
+ament_target_dependencies(error_estimation PUBLIC ${DEPS})
+
+# Install Cpp executables
+install(TARGETS error_estimation
+  DESTINATION lib/${PROJECT_NAME})
+
 
 #-----------------------------------------------------
 #   Install Python package
@@ -51,7 +73,7 @@ ament_python_install_package(
 install(
   PROGRAMS
     scripts/markers.py
-    DESTINATION lib/${PROJECT_NAME} 
+    DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()

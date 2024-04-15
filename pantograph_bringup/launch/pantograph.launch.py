@@ -129,6 +129,12 @@ def generate_launch_description():
         name='markers_node',
     )
 
+    error_estimation_node = Node(
+        package='haptic_controller',
+        executable='error_estimation',
+        name='error_estimation_node',
+    )
+
     nodes = [
         control_node,
         rviz_node,
@@ -139,6 +145,7 @@ def generate_launch_description():
         pantograph_mock_operator_controller_spawner,
         effort_controller_spawner,
         markers_node,
+        error_estimation_node,
     ]
 
     return LaunchDescription(declared_arguments + nodes)

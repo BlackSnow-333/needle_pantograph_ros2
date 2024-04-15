@@ -3,11 +3,13 @@ import rclpy
 from rclpy.node import Node
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
+import numpy as np
+
 
 class NeedleTrajectory(Node):
     def __init__(self):
         super().__init__('needle_trajectory_marker')
-        self.publisher_ = self.create_publisher(Marker, '/needle_trajectory', 5)  
+        self.publisher_ = self.create_publisher(Marker, '/needle_trajectory', 5)
 
         # Initialize the marker
         self.marker = Marker()
@@ -42,14 +44,32 @@ class NeedleTrajectory(Node):
         end_pt.y = 0.16056 - 0.02
         end_pt.z = 0.09 + 0.05
 
-        # ToDo: Discretization of the needle trajectory
-
-
         self.marker.points.append(end_pt)
         self.get_logger().info("Publishing the needle_trajectory topic. Use RViz to visualize.")
-        
+
     def publish_marker(self):
         self.publisher_.publish(self.marker)
+
+    import numpy as np
+
+    def distance(PU, PI, n):
+
+        # Convert inputs to numpy arrays
+        p = np.array(PU)
+        p0 = np.array(PI)
+        n = np.array(n)
+
+        # Calculate the vector from the line point to the point
+        p_to_p0 = p - p0
+
+        # Calculate the cross product of (p - p0) and the direction vector d
+        cross_prod = np.cross(p_to_p0, n)
+
+        # Compute the distance
+        distance = np.linalg.norm(cross_prod) / np.linalg.norm(n)
+
+        return distance
+
 
 def main(args=None):
     rclpy.init(args=args)
@@ -57,8 +77,9 @@ def main(args=None):
 
     while rclpy.ok():
         trajectory.publish_marker()
-    trajectory.destroy_node()  
+    trajectory.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
