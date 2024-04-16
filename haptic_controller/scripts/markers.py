@@ -3,10 +3,10 @@ import rclpy
 from rclpy.node import Node
 from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point
-import numpy as np
 
 
 class NeedleTrajectory(Node):
+
     def __init__(self):
         super().__init__('needle_trajectory_marker')
         self.publisher_ = self.create_publisher(Marker, '/needle_trajectory', 5)
@@ -49,8 +49,6 @@ class NeedleTrajectory(Node):
 
     def publish_marker(self):
         self.publisher_.publish(self.marker)
-
-    import numpy as np
 
 
 def main(args=None):

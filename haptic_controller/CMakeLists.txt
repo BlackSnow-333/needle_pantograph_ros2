@@ -53,20 +53,12 @@ include_directories(include)
 add_executable(error_estimation src/error_estimation.cpp)
 ament_target_dependencies(error_estimation PUBLIC ${DEPS})
 
-# add_executable(trajectory_marker src/trajectory_marker.cpp)
-# ament_target_dependencies(trajectory_marker PUBLIC ${DEPS})
-
 # Install Cpp executables
 install(
-  TARGETS 
+  TARGETS
   error_estimation
   # trajectory_marker
   DESTINATION lib/${PROJECT_NAME})
-
-# install(TARGETS trajectory_marker
-#   DESTINATION lib/${PROJECT_NAME})
-
-
 
 #-----------------------------------------------------
 #   Install Python package

@@ -2,11 +2,6 @@
 
 import rclpy
 from rclpy.node import Node
-
-import numpy as np
-
-from std_msgs.msg import Float64MultiArray
-
 from interactive_markers.interactive_marker_server import InteractiveMarkerServer
 from visualization_msgs.msg import (
     InteractiveMarker,
@@ -20,12 +15,6 @@ class InteractiveMarkerNode(Node):
     def __init__(self):
         super().__init__('trajectory_marker_node')
 
-        # self.publisher_ = self.create_publisher(
-        #     Float64MultiArray,
-        #     '/trajectory_marker',
-        #     5
-        # )
-
         # create an interactive marker server on the topic namespace trajectory_marker
         self.marker_server = InteractiveMarkerServer(self, 'trajectory_marker')
         # self.marker_position = np.array([0.0425, 0.16056, 0.09])
@@ -36,8 +25,7 @@ class InteractiveMarkerNode(Node):
         int_marker.name = "trajectory_marker"
         int_marker.description = "Current operator's desired trajectory"
 
-
-        # Fixed position of the arrow tip at the insertion point 
+        # Fixed position of the arrow tip at the insertion point
         int_marker.pose.position.x = 0.0425
         int_marker.pose.position.y = 0.16056
         int_marker.pose.position.z = 0.09
@@ -89,26 +77,9 @@ class InteractiveMarkerNode(Node):
     def process_feedback(self, feedback):
         p = feedback.pose.position
         q = feedback.pose.orientation
-        self.get_logger().info('Feedback from marker: Position (%.2f, %.2f, %.2f), Orientation (%.2f, %.2f, %.2f, %.2f)' % (p.x, p.y, p.z, q.x, q.y, q.z, q.w))
+        self.get_logger().info(f'Feedback from marker: Position ({p.x:.2f}, {p.y:.2f}, {p.z:.2f}), Orientation ({q.x:.2f}, {q.y:.2f}, {q.z:.2f}, {q.w:.2f})')
 
-        # self.marker_server.setCallback(int_marker.name, self.process_marker_feedback)
 
-    #     # 'commit' changes and send to all clients
-    #     self.marker_server.applyChanges()
-
-    #     # Create timer to update the published marker
-    #     self.timer = self.create_timer(0.002, self.update)
-
-    # def update(self):
-    #     msg = Float64MultiArray()
-    #     msg.data = [self.marker_position[0], self.marker_position[1], self.marker_position[2]]
-    #     self.publisher_.publish(msg)
-
-    # def process_marker_feedback(self, feedback):
-    #     self.marker_position[0] = feedback.pose.position.x
-    #     self.marker_position[1] = feedback.pose.position.y
-    #     self.marker_position[2] = feedback.pose.position.z
-    
 def main(args=None):
     rclpy.init(args=args)
     node = InteractiveMarkerNode()
@@ -118,6 +89,7 @@ def main(args=None):
         pass
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
