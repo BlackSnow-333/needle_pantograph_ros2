@@ -52,24 +52,6 @@ class NeedleTrajectory(Node):
 
     import numpy as np
 
-    def distance(PU, PI, n):
-
-        # Convert inputs to numpy arrays
-        p = np.array(PU)
-        p0 = np.array(PI)
-        n = np.array(n)
-
-        # Calculate the vector from the line point to the point
-        p_to_p0 = p - p0
-
-        # Calculate the cross product of (p - p0) and the direction vector d
-        cross_prod = np.cross(p_to_p0, n)
-
-        # Compute the distance
-        distance = np.linalg.norm(cross_prod) / np.linalg.norm(n)
-
-        return distance
-
 
 def main(args=None):
     rclpy.init(args=args)

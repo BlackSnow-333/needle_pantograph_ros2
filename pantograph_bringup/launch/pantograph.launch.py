@@ -129,6 +129,12 @@ def generate_launch_description():
         name='markers_node',
     )
 
+    trajectory_marker_node = Node(
+        package='haptic_controller',
+        executable='trajectory_markerPY.py',
+        name='trajectory_marker_node',
+    )
+
     error_estimation_node = Node(
         package='haptic_controller',
         executable='error_estimation',
@@ -144,7 +150,8 @@ def generate_launch_description():
         pantograph_mock_motors_controller_spawner,
         pantograph_mock_operator_controller_spawner,
         effort_controller_spawner,
-        markers_node,
+        # markers_node,
+        trajectory_marker_node,
         error_estimation_node,
     ]
 

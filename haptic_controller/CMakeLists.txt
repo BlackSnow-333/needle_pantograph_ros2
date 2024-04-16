@@ -10,13 +10,6 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
-# find dependencies
-# find_package(ament_cmake REQUIRED)
-# find_package(ament_cmake_python REQUIRED)
-# find_package(rclcpp REQUIRED)
-# find_package(rclpy REQUIRED)
-# find_package(trajectory_msgs REQUIRED)
-
 set(DEPS
   ament_cmake
   ament_cmake_python
@@ -28,6 +21,8 @@ set(DEPS
   tf2_geometry_msgs
   visualization_msgs
   geometry_msgs
+  std_msgs
+  interactive_markers
 )
 
 foreach(Dependency IN ITEMS ${DEPS})
@@ -54,13 +49,23 @@ endif()
 # Include Cpp "include" directory
 include_directories(include)
 
-# Create Cpp executable
+# Create Cpp executables
 add_executable(error_estimation src/error_estimation.cpp)
 ament_target_dependencies(error_estimation PUBLIC ${DEPS})
 
+# add_executable(trajectory_marker src/trajectory_marker.cpp)
+# ament_target_dependencies(trajectory_marker PUBLIC ${DEPS})
+
 # Install Cpp executables
-install(TARGETS error_estimation
+install(
+  TARGETS 
+  error_estimation
+  # trajectory_marker
   DESTINATION lib/${PROJECT_NAME})
+
+# install(TARGETS trajectory_marker
+#   DESTINATION lib/${PROJECT_NAME})
+
 
 
 #-----------------------------------------------------
@@ -73,6 +78,7 @@ ament_python_install_package(
 install(
   PROGRAMS
     scripts/markers.py
+    scripts/trajectory_markerPY.py
     DESTINATION lib/${PROJECT_NAME}
 )
 

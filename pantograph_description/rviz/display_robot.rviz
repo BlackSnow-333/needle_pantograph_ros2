@@ -7,6 +7,7 @@ Panels:
         - /Global Options1
         - /Status1
         - /TF1/Frames1
+        - /trajectory_marker1
       Splitter Ratio: 0.7176470756530762
     Tree Height: 515
   - Class: rviz_common/Selection
@@ -193,7 +194,7 @@ Visualization Manager:
       Enabled: true
       Name: Marker
       Namespaces:
-        "": true
+        {}
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -201,6 +202,15 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /needle_trajectory
+      Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enable Transparency: true
+      Enabled: true
+      Interactive Markers Namespace: /trajectory_marker
+      Name: trajectory_marker
+      Show Axes: false
+      Show Descriptions: true
+      Show Visual Aids: false
       Value: true
   Enabled: true
   Global Options:
@@ -248,25 +258,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.831713080406189
+      Distance: 0.6655511856079102
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.005943897180259228
-        Y: 0.11155283451080322
-        Z: -0.02306029386818409
+        X: 0.052294570952653885
+        Y: 0.09510015696287155
+        Z: -0.006776382680982351
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5953986048698425
+      Pitch: 0.855398416519165
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.513575553894043
+      Yaw: 5.358573913574219
     Saved: ~
 Window Geometry:
   Displays:
