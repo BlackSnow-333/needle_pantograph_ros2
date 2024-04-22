@@ -135,17 +135,24 @@ def generate_launch_description():
         name='error_estimation_node',
     )
 
+    haptic_controller_node = Node(
+        package='haptic_controller',
+        executable='haptic_controller',
+        name='haptic_controller_node',
+    )
+
     nodes = [
         control_node,
         rviz_node,
         robot_state_pub_node,
         joint_state_broadcaster_spawner,
         pantograph_mimick_controller_spawner,
-        pantograph_mock_motors_controller_spawner,
-        pantograph_mock_operator_controller_spawner,
+        # pantograph_mock_motors_controller_spawner,
+        # pantograph_mock_operator_controller_spawner,
         effort_controller_spawner,
         trajectory_marker_node,
         error_estimation_node,
+        haptic_controller_node,
     ]
 
     return LaunchDescription(declared_arguments + nodes)

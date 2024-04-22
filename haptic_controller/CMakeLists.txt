@@ -10,6 +10,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Find dependencies
+
 set(DEPS
   ament_cmake
   ament_cmake_python
@@ -23,12 +25,41 @@ set(DEPS
   geometry_msgs
   std_msgs
   interactive_markers
+  controller_interface
+  generate_parameter_library
+  pluginlib
+  rclcpp_lifecycle
+  realtime_tools
+  pantograph_library
+  eigen3_cmake_module
+  Eigen3
 )
 
 foreach(Dependency IN ITEMS ${DEPS})
   find_package(${Dependency} REQUIRED)
 endforeach()
 
+generate_parameter_library(
+  haptic_controller_parameters
+  src/haptic_controller_parameters.yaml
+)
+add_library(${PROJECT_NAME} SHARED
+  src/haptic_controller.cpp
+)
+
+target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+target_include_directories(${PROJECT_NAME} PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
+  $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(${PROJECT_NAME} PUBLIC
+  haptic_controller_parameters
+)
+ament_target_dependencies(${PROJECT_NAME} PUBLIC ${DEPS})
+target_compile_definitions(${PROJECT_NAME} PRIVATE "HAPTIC_CONTROLLER_BUILDING_DLL")
+pluginlib_export_plugin_description_file(controller_interface haptic_controller_plugin.xml)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -47,7 +78,7 @@ endif()
 #-----------------------------------------------------
 
 # Include Cpp "include" directory
-include_directories(include)
+# include_directories(include)
 
 # Create Cpp executables
 add_executable(error_estimation src/error_estimation.cpp)
@@ -57,8 +88,22 @@ ament_target_dependencies(error_estimation PUBLIC ${DEPS})
 install(
   TARGETS
   error_estimation
-  # trajectory_marker
   DESTINATION lib/${PROJECT_NAME})
+
+install(
+  DIRECTORY include/
+  DESTINATION include
+)
+install(
+  TARGETS
+  haptic_controller
+  haptic_controller_parameters
+  EXPORT export_haptic_controller
+  RUNTIME DESTINATION bin
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  INCLUDES DESTINATION include
+)
 
 #-----------------------------------------------------
 #   Install Python package
@@ -74,4 +119,6 @@ install(
     DESTINATION lib/${PROJECT_NAME}
 )
 
+ament_export_targets(export_haptic_controller HAS_LIBRARY_TARGET)
+ament_export_dependencies(${DEPS})
 ament_package()

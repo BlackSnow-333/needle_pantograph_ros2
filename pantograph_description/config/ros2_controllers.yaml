@@ -28,6 +28,9 @@ controller_manager:
     panto_position_controller:
       type: position_controllers/JointGroupPositionController
 
+    haptic_controller:
+      type: haptic_controller/HapticController
+
 
 haptic_trajectory_controller:
   ros__parameters:

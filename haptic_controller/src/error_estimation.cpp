@@ -16,14 +16,16 @@
 #include <Eigen/Dense>
 #include <Eigen/Geometry>
 
-#include "tf2_ros/transform_listener.h"
-#include "tf2_ros/buffer.h"
 #include "rclcpp/rclcpp.hpp"
 #include "visualization_msgs/msg/marker.hpp"
 #include "visualization_msgs/msg/interactive_marker_feedback.hpp"
 #include "geometry_msgs/msg/point.hpp"
 #include "tf2_geometry_msgs/tf2_geometry_msgs.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
+#include "std_msgs/msg/float64.hpp"
+
+#include "tf2_ros/transform_listener.h"
+#include "tf2_ros/buffer.h"
 
 
 class ErrorEstimation : public rclcpp::Node
@@ -35,6 +37,9 @@ public:
     int_marker_sub_ = this->create_subscription<visualization_msgs::msg::InteractiveMarkerFeedback>(
       "/trajectory_marker/feedback", 10,
       std::bind(&ErrorEstimation::marker_callback, this, std::placeholders::_1));
+
+    // Create error publisher
+    error_publisher_ = this->create_publisher<std_msgs::msg::Float64>("/angle_error", 10);
 
     // Timer to trigger error calculation and logging every second (only for testing)
     timer_ =
@@ -49,7 +54,7 @@ private:
   void marker_callback(const visualization_msgs::msg::InteractiveMarkerFeedback::SharedPtr msg)
   {
     if (msg->event_type == visualization_msgs::msg::InteractiveMarkerFeedback::POSE_UPDATE) {
-      // Extract position information from the feedback message
+      // Extract position and orientation information from the feedback message
       // The marker is an arrow that starts at PI, has an arbitrary length
       // and its orientaition its defined by the user via an interactive marker
       auto arrow_position = msg->pose.position;
@@ -85,8 +90,13 @@ private:
       // and the vector from the fixed point to the third point
       double angle_error = std::acos(marker_vec.normalized().dot(PIU_vec.normalized()));
 
-      RCLCPP_INFO(
-        this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
+      // RCLCPP_INFO(
+      //   this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
+
+      // Publish angle error
+      auto msg = std_msgs::msg::Float64();
+      msg.data = angle_error;
+      error_publisher_->publish(msg);
     } catch (tf2::TransformException & ex) {
       RCLCPP_ERROR(
         this->get_logger(), "Could not transform from 'world' to 'needle_interaction_link': %s",
@@ -94,7 +104,6 @@ private:
     }
   }
 
-  // geometry_msgs::msg::Point_<std::allocator<void>> last_marker_position_;
   Eigen::Vector3d last_marker_position_;
   Eigen::Vector3d arrow_start;
   Eigen::Vector3d arrow_end;
@@ -104,6 +113,7 @@ private:
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr error_publisher_;
 
   /// Coords of insertion point according to CAD
   double PI_x = 0.0425;

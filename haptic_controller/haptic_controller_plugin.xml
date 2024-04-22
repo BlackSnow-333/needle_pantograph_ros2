@@ -1,0 +1,10 @@
+<library path="haptic_controller">
+  <class
+    name="haptic_controller/HapticController" 
+    type="haptic_controller::HapticController" 
+    base_class_type="controller_interface::ControllerInterface">
+    <description>
+      Haptic controller used to implement force control
+    </description>
+  </class>
+</library>
