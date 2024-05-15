@@ -26,7 +26,7 @@ class InteractiveMarkerNode(Node):
         int_marker.description = "Current operator's desired trajectory"
 
         # Fixed position of the arrow tip at the insertion point
-        int_marker.pose.position.x = 0.0425
+        int_marker.pose.position.x = 0
         int_marker.pose.position.y = 0.16056
         int_marker.pose.position.z = 0.09
         int_marker.scale = 0.1

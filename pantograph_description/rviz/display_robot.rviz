@@ -6,8 +6,6 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /TF1/Frames1
-        - /trajectory_marker1
       Splitter Ratio: 0.7176470756530762
     Tree Height: 515
   - Class: rviz_common/Selection
@@ -141,21 +139,21 @@ Visualization Manager:
       Frames:
         All Enabled: false
         needle_interaction_link:
-          Value: true
+          Value: false
         panto_base:
           Value: false
         panto_left_link1:
           Value: false
         panto_left_link2:
-          Value: false
+          Value: true
         panto_left_motor:
-          Value: false
+          Value: true
         panto_link_fulcrum:
           Value: true
         panto_right_link1:
-          Value: false
+          Value: true
         panto_right_link2:
-          Value: false
+          Value: true
         panto_right_motor:
           Value: false
         panto_tool0:
@@ -166,11 +164,11 @@ Visualization Manager:
           Value: true
         world:
           Value: true
-      Marker Scale: 0.20000000298023224
+      Marker Scale: 0.10000000149011612
       Name: TF
       Show Arrows: true
       Show Axes: true
-      Show Names: false
+      Show Names: true
       Tree:
         world:
           panto_base:
@@ -191,7 +189,7 @@ Visualization Manager:
       Update Interval: 0
       Value: true
     - Class: rviz_default_plugins/Marker
-      Enabled: true
+      Enabled: false
       Name: Marker
       Namespaces:
         {}
@@ -202,7 +200,7 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /needle_trajectory
-      Value: true
+      Value: false
     - Class: rviz_default_plugins/InteractiveMarkers
       Enable Transparency: true
       Enabled: true
@@ -258,25 +256,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 0.6655511856079102
+      Distance: 0.7119240164756775
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.052294570952653885
-        Y: 0.09510015696287155
-        Z: -0.006776382680982351
+        X: -0.006427452899515629
+        Y: 0.06187239661812782
+        Z: -0.07612114399671555
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.855398416519165
+      Pitch: 0.8803984522819519
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.358573913574219
+      Yaw: 4.993580341339111
     Saved: ~
 Window Geometry:
   Displays:
