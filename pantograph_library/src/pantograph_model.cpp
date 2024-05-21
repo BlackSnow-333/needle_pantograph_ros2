@@ -317,19 +317,24 @@ PantographModel::populate_all_joint_positions_full_system(Eigen::Vector<double, 
   return ik_system(p);
 }
 
-/* Calculate force applied by the pantograph (f_mech)to create the force
-felt by the user with:
-- alpha : the angle determined by the direction
-          of the force applied by the user
-- f_guide : the desired guiding force to be felt by the user*/
+
 double
 PantographModel::get_panto_force(Eigen::Vector<double, 3> PU, double f_guide, double alpha)
 {
+  /* Calculate force applied by the pantograph (f_mech)to create the force
+  felt by the user with:
+    - alpha : the angle determined by the direction
+          of the force applied by the user
+    - f_guide : the desired guiding force to be felt by the user*/
+
   // Get all the robot joint angles IKM
   Eigen::Vector<double, 8> jnt_ext_pos;
   jnt_ext_pos = ik_system(PU);
   double theta = jnt_ext_pos[5];  // Azimuth angle
   double phi = jnt_ext_pos[6];  // Elevation angle
+
+  // Check for phi angle definition
+  phi = (PI_CST / 2) - phi;
 
   // get insertion point height
   double H = PI_z;  // = 0.09 based on insertion point coords
@@ -350,7 +355,7 @@ PantographModel::get_panto_force(Eigen::Vector<double, 3> PU, double f_guide, do
   double f_mech = f_perp / std::sqrt(1 - std::pow(cos_beta, 2));
 
   // Calculate the folt felt by the user at point PU
-  double f_user = f_perp * (l_in / l_out);
+  // double f_user = f_perp * (l_in / l_out);
 
   return f_mech;
 }
