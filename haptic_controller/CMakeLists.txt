@@ -115,6 +115,7 @@ ament_python_install_package(
 install(
   PROGRAMS
     scripts/markers.py
+    scripts/dicom_reader.py
     scripts/trajectory_markerPY.py
     DESTINATION lib/${PROJECT_NAME}
 )

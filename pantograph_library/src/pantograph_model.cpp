@@ -108,8 +108,8 @@ PantographModel::ik(Eigen::Vector<double, 2> P3)
   Eigen::Vector<double, 5> jnt_pos;
   Eigen::Vector2d P1, P5, P13, P53, x0;
 
-  P1 << -l_a5_ / 2, 0; // Coords of P1 in base frame
-  P5 << l_a5_ / 2, 0;  // Coords of P5 in base frame
+  P1 << -l_a5_ / 2, 0;  // Coords of P1 in base frame
+  P5 << l_a5_ / 2, 0;   // Coords of P5 in base frame
 
   // Calculate the length of the segment P1P3
   P13 = P3 - P1;

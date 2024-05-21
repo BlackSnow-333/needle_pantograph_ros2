@@ -105,18 +105,19 @@ def generate_launch_description():
         arguments=['pantograph_mimick_controller'],
     )
 
-    pantograph_mock_motors_controller_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['pantograph_mock_motors_controller'],
-        condition=IfCondition(use_fake_hardware),
-    )
-    pantograph_mock_operator_controller_spawner = Node(
-        package='controller_manager',
-        executable='spawner',
-        arguments=['pantograph_mock_operator_controller'],
-        condition=IfCondition(use_fake_hardware),
-    )
+    # pantograph_mock_motors_controller_spawner = Node(
+    #     package='controller_manager',
+    #     executable='spawner',
+    #     arguments=['pantograph_mock_motors_controller'],
+    #     condition=IfCondition(use_fake_hardware),
+    # )
+    # pantograph_mock_operator_controller_spawner = Node(
+    #     package='controller_manager',
+    #     executable='spawner',
+    #     arguments=['pantograph_mock_operator_controller'],
+    #     condition=IfCondition(use_fake_hardware),
+    # )
+
     effort_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
@@ -125,7 +126,7 @@ def generate_launch_description():
 
     trajectory_marker_node = Node(
         package='haptic_controller',
-        executable='trajectory_markerPY.py',
+        executable='markers.py',
         name='trajectory_marker_node',
     )
 
@@ -135,11 +136,17 @@ def generate_launch_description():
         name='error_estimation_node',
     )
 
-    haptic_controller_node = Node(
+    dicom_reader_node = Node(
         package='haptic_controller',
-        executable='haptic_controller',
-        name='haptic_controller_node',
+        executable='dicom_reader.py',
+        name='dicom_reader_node',
     )
+
+    # haptic_controller_node = Node(
+    #     package='haptic_controller',
+    #     executable='haptic_controller',
+    #     name='haptic_controller_node',
+    # )
 
     nodes = [
         control_node,
@@ -152,7 +159,8 @@ def generate_launch_description():
         effort_controller_spawner,
         trajectory_marker_node,
         error_estimation_node,
-        haptic_controller_node,
+        dicom_reader_node,
+        # haptic_controller_node,
     ]
 
     return LaunchDescription(declared_arguments + nodes)

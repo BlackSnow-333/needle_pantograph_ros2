@@ -34,54 +34,56 @@
 #include "haptic_controller/visibility_control.h"
 
 #include "std_msgs/msg/float64.hpp"
+#include <visualization_msgs/msg/marker.hpp>
 
-
-namespace haptic_controller {
+namespace haptic_controller
+{
 
 class HapticController : public controller_interface::ControllerInterface
 {
 public:
-    HAPTIC_CONTROLLER_PUBLIC
-    HapticController();
+  HAPTIC_CONTROLLER_PUBLIC
+  HapticController();
 
-    HAPTIC_CONTROLLER_PUBLIC
-    ~HapticController() = default;
+  HAPTIC_CONTROLLER_PUBLIC
+  ~HapticController() = default;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::CallbackReturn on_init() override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::CallbackReturn on_init() override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::InterfaceConfiguration command_interface_configuration() const override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::InterfaceConfiguration command_interface_configuration() const override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::InterfaceConfiguration state_interface_configuration() const override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::InterfaceConfiguration state_interface_configuration() const override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::CallbackReturn on_configure(
-        const rclcpp_lifecycle::State & previous_state) override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::CallbackReturn on_configure(
+    const rclcpp_lifecycle::State & previous_state) override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::CallbackReturn on_activate(
-        const rclcpp_lifecycle::State & previous_state) override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::CallbackReturn on_activate(
+    const rclcpp_lifecycle::State & previous_state) override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::CallbackReturn on_deactivate(
-        const rclcpp_lifecycle::State & previous_state) override;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::CallbackReturn on_deactivate(
+    const rclcpp_lifecycle::State & previous_state) override;
 
-    HAPTIC_CONTROLLER_PUBLIC
-    controller_interface::return_type update(
-        const rclcpp::Time & time, const rclcpp::Duration & period) override;
-      
-    std::vector<std::string> joint_names_;
-    std::string interface_name_;
-    
-    std::vector<std::string> command_interface_types_;
+  HAPTIC_CONTROLLER_PUBLIC
+  controller_interface::return_type update(
+    const rclcpp::Time & time, const rclcpp::Duration & period) override;
 
+  std::vector<std::string> joint_names_;
+  std::string interface_name_;
+
+  std::vector<std::string> command_interface_types_;
+  // void haptic_controller::HapticController::marker_callback(const visualization_msgs::msg::Marker::SharedPtr msg);
+  Eigen::Vector3d marker_pos;
 
 protected:
   controller_interface::CallbackReturn read_parameters();
-
-  double calculate_and_log_error();
+  // void haptic_controller::HapticController:: marker_callback(const visualization_msgs::msg::Marker::SharedPtr msg);
+  void marker_callback(const visualization_msgs::msg::Marker::SharedPtr msg);
 
   std::shared_ptr<ParamListener> param_listener_;
   Params params_;
@@ -89,13 +91,13 @@ protected:
   std::unordered_map<std::string, std::unordered_map<std::string, double>> name_if_value_mapping_;
   std::vector<std::string> pantograph_joint_names_;
   pantograph_library::PantographModel pantograph_model_;
-  
+
   realtime_tools::RealtimeBuffer<std::shared_ptr<std_msgs::msg::Float64>> rt_command_ptr_;
   rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr error_subscriber_;
   double last_error_;
-
+  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr marker_subscriber_;
 };
 
-} // namespace haptic_controller
+}  // namespace haptic_controller
 
-#endif // HAPTIC_CONTROLLER_HAPTIC_CONTROLLER_HPP_
+#endif  // HAPTIC_CONTROLLER_HAPTIC_CONTROLLER_HPP_

@@ -21,7 +21,7 @@
 #include "rclcpp/logging.hpp"
 #include "rclcpp/qos.hpp"
 
-namespace haptic_controller 
+namespace haptic_controller
 {
 
 const auto kUninitializedValue = std::numeric_limits<double>::quiet_NaN();
@@ -29,12 +29,13 @@ using hardware_interface::HW_IF_POSITION;
 using hardware_interface::HW_IF_VELOCITY;
 using hardware_interface::HW_IF_EFFORT;
 
-HapticController::HapticController() 
+HapticController::HapticController()
 : controller_interface::ControllerInterface(), pantograph_model_()
 {
 }
 
-controller_interface::CallbackReturn HapticController::on_init() {
+controller_interface::CallbackReturn HapticController::on_init()
+{
   // Implementation of init method
   try {
     param_listener_ = std::make_shared<ParamListener>(get_node());
@@ -47,7 +48,7 @@ controller_interface::CallbackReturn HapticController::on_init() {
 }
 
 controller_interface::CallbackReturn HapticController::on_configure(
-    const rclcpp_lifecycle::State & /*previous_state*/) 
+  const rclcpp_lifecycle::State & /*previous_state*/)
 {
   // Implementation of on_configure method
   auto ret = this->read_parameters();
@@ -73,12 +74,18 @@ controller_interface::CallbackReturn HapticController::on_configure(
     [this](const std_msgs::msg::Float64::SharedPtr msg)
     {rt_command_ptr_.writeFromNonRT(msg);});
 
+  // Create subscription to marker topic
+  marker_subscriber_ = \
+    get_node()->create_subscription<visualization_msgs::msg::Marker>(
+    "/visualization_marker", 10,
+    std::bind(&HapticController::marker_callback, this, std::placeholders::_1));
+
   RCLCPP_INFO(get_node()->get_logger(), "configure successful");
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::InterfaceConfiguration 
-HapticController::command_interface_configuration() const 
+controller_interface::InterfaceConfiguration
+HapticController::command_interface_configuration() const
 {
   // Implementation of command_interface_configuration method
   controller_interface::InterfaceConfiguration command_interfaces_config;
@@ -92,20 +99,24 @@ HapticController::command_interface_configuration() const
     pantograph_joint_names_[0] + "/" + HW_IF_VELOCITY);
   command_interfaces_config.names.push_back(
     pantograph_joint_names_[4] + "/" + HW_IF_VELOCITY);
+  command_interfaces_config.names.push_back(
+    pantograph_joint_names_[0] + "/" + HW_IF_EFFORT);
+  command_interfaces_config.names.push_back(
+    pantograph_joint_names_[4] + "/" + HW_IF_EFFORT);
+
 
   return command_interfaces_config;
 }
 
-controller_interface::InterfaceConfiguration HapticController::
-state_interface_configuration() 
-const 
+controller_interface::InterfaceConfiguration HapticController::state_interface_configuration()
+const
 {
   return controller_interface::InterfaceConfiguration{
     controller_interface::interface_configuration_type::ALL};
 }
 
 controller_interface::CallbackReturn HapticController::on_activate(
-    const rclcpp_lifecycle::State & /*previous_state*/) 
+  const rclcpp_lifecycle::State & /*previous_state*/)
 {
   // Implementation of on_activate method
   std::vector<std::reference_wrapper<hardware_interface::LoanedCommandInterface>>
@@ -130,7 +141,7 @@ controller_interface::CallbackReturn HapticController::on_activate(
 }
 
 controller_interface::CallbackReturn HapticController::on_deactivate(
-    const rclcpp_lifecycle::State & /*previous_state*/) 
+  const rclcpp_lifecycle::State & /*previous_state*/)
 {
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -149,92 +160,122 @@ double get_value(
 }
 
 controller_interface::return_type HapticController::update(
-    const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
-    if (param_listener_->is_old(params_))
-    {
-        if (read_parameters() != controller_interface::CallbackReturn::SUCCESS)
-        {
-            RCLCPP_ERROR(get_node()->get_logger(), "Failed to read parameters during update");
-            return controller_interface::return_type::ERROR;
-        }
+  if (param_listener_->is_old(params_)) {
+    if (read_parameters() != controller_interface::CallbackReturn::SUCCESS) {
+      RCLCPP_ERROR(get_node()->get_logger(), "Failed to read parameters during update");
+      return controller_interface::return_type::ERROR;
     }
+  }
 
-    for (const auto &state_interface : state_interfaces_)
-    {
-        name_if_value_mapping_[
-            state_interface.get_prefix_name()][state_interface.get_interface_name()] =
-            state_interface.get_value();
-        RCLCPP_DEBUG(
-            get_node()->get_logger(), "%s/%s: %f\n", state_interface.get_prefix_name().c_str(),
-            state_interface.get_interface_name().c_str(), state_interface.get_value());
-    }
+  for (const auto & state_interface : state_interfaces_) {
+    name_if_value_mapping_[
+      state_interface.get_prefix_name()][state_interface.get_interface_name()] =
+      state_interface.get_value();
+    RCLCPP_DEBUG(
+      get_node()->get_logger(), "%s/%s: %f\n", state_interface.get_prefix_name().c_str(),
+      state_interface.get_interface_name().c_str(), state_interface.get_value());
+  }
 
-    // Get the previous (active) joint positions and velocities
-    double last_pos_a1 =
-        get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_POSITION);
-    double last_vel_a1 =
-        get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_VELOCITY);
-    double last_pos_a5 =
-        get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_POSITION);
-    double last_vel_a5 =
-        get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_VELOCITY);
+  // Get the previous (active) joint positions and velocities
+  double last_pos_a1 =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_POSITION);
+  double last_vel_a1 =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_VELOCITY);
+  double last_pos_a5 =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_POSITION);
+  double last_vel_a5 =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_VELOCITY);
 
-    // Compute the pantograph jacobian:
-    Eigen::Vector<double, 2> q;
-    q << last_pos_a1, last_pos_a5;
+  Eigen::Vector2d q = Eigen::Vector2d(last_pos_a1, last_pos_a5);
+  Eigen::Vector2d q_dot = Eigen::Vector2d(last_vel_a1, last_vel_a5);
 
-    Eigen::Matrix2d j_panto = pantograph_model_.jacobian(q);
+  // Compute the pantograph jacobian:
+  Eigen::Matrix2d J_panto = pantograph_model_.jacobian(q);
 
-    // Get the previous (active) joint torques
-    double torque_a1 = get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_EFFORT);
-    double torque_a5 = get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_EFFORT);
+  // Get the previous (active) joint torques
+  double torque_a1 = get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_EFFORT);
+  double torque_a5 = get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_EFFORT);
 
-    // ==========================================================
-    // Compute angle error between desired trajectory (int_marker)
-    // and current needle orientation
-    // ==========================================================
+  // ==========================================================
+  // Compute angle error between desired trajectory (int_marker)
+  // and current needle orientation
+  // ==========================================================
 
-    // Get angle error from rt buffer
-    auto angle_error_msg = rt_command_ptr_.readFromRT();
-    // no command received yet
-    if (!angle_error_msg || !(*angle_error_msg))
-    {
-      last_error_ = 0.0;
-      return controller_interface::return_type::OK;
-    }
-
-    last_error_ = (*angle_error_msg)->data;
-
-    // ==========================================================
-    // TODO compute joint torques according to force control law
-    // ==========================================================
-
-    // tau_1, tau_5 = id_system(dPu);
-   
-    // Print info in terminal (for testing only)
-    RCLCPP_INFO(get_node()->get_logger(), "angle error : %2f ", last_error_);
-
-    // ==========================================================
-    // TODO write commands to HW
-    // ==========================================================
-
-    // // Integrate state variables
-    // double dt = period.seconds();
-    // double vel_a1 = last_vel_a1 + last_acc_a1 * dt;
-    // double pos_a1 = last_pos_a1 + vel_a1 * dt;
-
-    // double vel_a5 = last_vel_a5 + last_acc_a5 * dt;
-    // double pos_a5 = last_pos_a5 + vel_a5 * dt;
-
-    // command_interfaces_[0].set_value(vel_a1);
-    // command_interfaces_[1].set_value(vel_a5);
-    
-    // command_interfaces_[2].set_value(pos_a1);
-    // command_interfaces_[3].set_value(pos_a5);
-    
+  // Get angle error from rt buffer
+  auto angle_error_msg = rt_command_ptr_.readFromRT();
+  // no command received yet
+  if (!angle_error_msg || !(*angle_error_msg)) {
+    last_error_ = 0.0;
     return controller_interface::return_type::OK;
+  }
 
+  last_error_ = (*angle_error_msg)->data;
+
+  // Print info in terminal (for testing only)
+  // RCLCPP_INFO(get_node()->get_logger(), "angle error : %2f ", last_error_);
+
+  // ==========================================================
+  // TODO compute joint torques according to force control law
+  // ==========================================================
+  Eigen::Vector3d v_needle, v_target, v_proj;
+
+  // Pantograph end effector position :
+  Eigen::Vector2d p = pantograph_model_.fk(q);
+
+  // Pantograph end effector velocities
+  Eigen::Vector2d p_dot = J_panto * q_dot;
+
+  // System end effector position :
+  Eigen::Vector3d PU = pantograph_model_.fk_system(q);
+
+  // Vector from PI to PU:
+  v_needle[0] = PU[0] - pantograph_model_.PI_x;
+  v_needle[1] = PU[1] - pantograph_model_.PI_y;
+  v_needle[2] = PU[1] - pantograph_model_.PI_z;
+
+  // Vector from PI to Ptarget
+  v_target[0] = marker_pos[0] - pantograph_model_.PI_x;
+  v_target[1] = marker_pos[1] - pantograph_model_.PI_y;
+  v_target[2] = marker_pos[2] - pantograph_model_.PI_z;
+
+  // Projection of v_needle in trajectory path
+  v_proj = -v_needle.norm() * std::cos(last_error_) * v_target;
+
+
+  // Force unit vector
+  Eigen::Vector3d v_force;
+  v_force = (v_proj - v_needle) / (v_proj.norm() - v_needle.norm());
+
+
+  // Force felt by the user
+  // Proportional gain adjust according to desired guiding force
+  double Kp = 5;
+  Eigen::Vector3d F_u = Kp * last_error_ * v_force;
+
+  // Force that the pantograph needs to generate to create F_u
+  // Force magnitude :
+  double alpha = 45; // replace by alpha calculation alpha = f(F_u)
+  double norm_F_mech = pantograph_model_.get_panto_force(PU, F_u.norm(), alpha);
+
+  // F_mech unit vector
+  Eigen::Vector2d v_mech;
+  v_mech << std::cos(alpha), std::sin(alpha);
+  Eigen::Vector2d F_mech = norm_F_mech * v_mech;
+
+  // Computation of the active joint torques
+  auto tau = J_panto.transpose() * F_mech;
+
+  // ==========================================================
+  // TODO write commands to HW
+  // ==========================================================
+
+  // write mimics to HW
+  command_interfaces_[0].set_value(tau(0));
+  command_interfaces_[4].set_value(tau(1));
+
+  return controller_interface::return_type::OK;
 }
 
 controller_interface::CallbackReturn
@@ -257,7 +298,19 @@ HapticController::read_parameters()
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-} // namespace haptic_controller
+void haptic_controller::HapticController::marker_callback(
+  const visualization_msgs::msg::Marker::SharedPtr msg)
+{
+  if (msg->type == visualization_msgs::msg::Marker::LINE_STRIP && !msg->points.empty()) {
+    auto points = msg->points;
+    auto target_point = points[1];
+    marker_pos << target_point.x, target_point.y, target_point.z;
+  } else {
+    marker_pos << 0, 0, 0;
+  }
+}
+
+}  // namespace haptic_controller
 
 #include "class_loader/register_macro.hpp"
 

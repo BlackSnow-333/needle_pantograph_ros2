@@ -27,15 +27,14 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
-
 class ErrorEstimation : public rclcpp::Node
 {
 public:
   ErrorEstimation()
   : Node("error_estimation"), tf_buffer_(this->get_clock()), tf_listener_(tf_buffer_)
   {
-    int_marker_sub_ = this->create_subscription<visualization_msgs::msg::InteractiveMarkerFeedback>(
-      "/trajectory_marker/feedback", 10,
+    marker_sub_ = this->create_subscription<visualization_msgs::msg::Marker>(
+      "/visualization_marker", 10,
       std::bind(&ErrorEstimation::marker_callback, this, std::placeholders::_1));
 
     // Create error publisher
@@ -51,29 +50,40 @@ public:
   }
 
 private:
-  void marker_callback(const visualization_msgs::msg::InteractiveMarkerFeedback::SharedPtr msg)
+  void marker_callback(const visualization_msgs::msg::Marker::SharedPtr msg)
   {
-    if (msg->event_type == visualization_msgs::msg::InteractiveMarkerFeedback::POSE_UPDATE) {
-      // Extract position and orientation information from the feedback message
-      // The marker is an arrow that starts at PI, has an arbitrary length
-      // and its orientaition its defined by the user via an interactive marker
-      auto arrow_position = msg->pose.position;
-      auto arrow_orientation = msg->pose.orientation;
+    if (msg->points.size() != 2) {
+      RCLCPP_ERROR(this->get_logger(), "Received marker does not have exactly 2 points.");
+      return;
+    }
 
-      // Convert arrow position and orientation to Eigen vectors
-      arrow_start << arrow_position.x, arrow_position.y, arrow_position.z;
-      Eigen::Quaterniond arrow_quaternion(arrow_orientation.w, arrow_orientation.x,
-        arrow_orientation.y, arrow_orientation.z);
-      arrow_end = arrow_start + arrow_quaternion * Eigen::Vector3d(1.0, 0.0, 0.0);
+    if (msg->points.size() == 0) {
+      // If msg is empty default points to origin
+      p0.x = PI_x;
+      p0.y = PI_y;
+      p0.z = PI_z;
+
+      p1.x = 0;
+      p1.y = 0;
+      p1.z = 0;
+    } else {
+      // Extract the points from the marker
+      p0 = msg->points[0];  // Insertion point
+      p1 = msg->points[1];  // Target point from marker
     }
   }
 
   void calculate_and_log_error()
   {
+    // calculate and log error
     try {
       auto transform_stamped = tf_buffer_.lookupTransform(
         "world", "needle_interaction_link",
         tf2::TimePointZero);
+
+      // Needle insertion point
+      Eigen::Vector3d PI;
+      PI << PI_x, PI_y, PI_z;
 
       // Extract needle interaction point (PU) position
       auto PU = transform_stamped.transform.translation;
@@ -81,22 +91,37 @@ private:
 
       // Vector from insertion point (PI) to arrow tip
       // Vectors are defined in PI frame
-      Eigen::Vector3d marker_vec = arrow_end - arrow_start;
+      Eigen::Vector3d marker_vec(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
 
       // Vector from PI to PU
-      Eigen::Vector3d PIU_vec = PU_vec - arrow_start;
+      Eigen::Vector3d needle_vec = PU_vec - PI;
 
       // Calculate the angle between the arrow vector
       // and the vector from the fixed point to the third point
-      double angle_error = std::acos(marker_vec.normalized().dot(PIU_vec.normalized()));
+      double angle_error = PI_CST - std::acos(
+        needle_vec.dot(marker_vec) /
+        (needle_vec.norm() * marker_vec.norm()));
 
-      // RCLCPP_INFO(
-      //   this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
+      if (isnan(angle_error)) {
+        RCLCPP_INFO(
+          this->get_logger(), "Unable to calculate error, target point not defined ! ");
 
-      // Publish angle error
-      auto msg = std_msgs::msg::Float64();
-      msg.data = angle_error;
-      error_publisher_->publish(msg);
+        RCLCPP_INFO(
+          this->get_logger(), "Angle error set to %.2f ", 0.0);
+
+        // Publish angle error default value
+        auto msg = std_msgs::msg::Float64();
+        msg.data = 0.0;
+        error_publisher_->publish(msg);
+      } else {
+        RCLCPP_INFO(
+          this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
+
+        // Publish angle error
+        auto msg = std_msgs::msg::Float64();
+        msg.data = angle_error;
+        error_publisher_->publish(msg);
+      }
     } catch (tf2::TransformException & ex) {
       RCLCPP_ERROR(
         this->get_logger(), "Could not transform from 'world' to 'needle_interaction_link': %s",
@@ -104,21 +129,22 @@ private:
     }
   }
 
-  Eigen::Vector3d last_marker_position_;
-  Eigen::Vector3d arrow_start;
-  Eigen::Vector3d arrow_end;
-  rclcpp::Subscription<visualization_msgs::msg::InteractiveMarkerFeedback>::SharedPtr
-    int_marker_sub_;
+  geometry_msgs::msg::Point p0;
+  geometry_msgs::msg::Point p1;
+
+  // Coords of insertion point according to CAD
+  double PI_x = 0;
+  double PI_y = 0.16056;
+  double PI_z = 0.09;
+
+  double PI_CST = 3.14159265358979323846;
+
+  rclcpp::Subscription<visualization_msgs::msg::Marker>::SharedPtr marker_sub_;
 
   tf2_ros::Buffer tf_buffer_;
   tf2_ros::TransformListener tf_listener_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::Float64>::SharedPtr error_publisher_;
-
-  /// Coords of insertion point according to CAD
-  double PI_x = 0.0425;
-  double PI_y = 0.16056;
-  double PI_z = 0.09;
 };
 
 int main(int argc, char ** argv)
