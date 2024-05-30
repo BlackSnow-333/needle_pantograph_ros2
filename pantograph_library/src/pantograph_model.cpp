@@ -166,12 +166,13 @@ PantographModel::ik(Eigen::Vector<double, 2> P3)
 Eigen::Matrix<double, 2, 2>
 PantographModel::jacobian(Eigen::Vector<double, 2> q)
 {
-  Eigen::Vector2d P2, P3, P4, P5;
+  Eigen::Vector2d P1, P2, P3, P4, P5;
   P3 = fk(q);
-  P5 << l_a5_, 0;
+  P1 << -l_a5_ / 2, 0;
+  P5 << l_a5_ / 2, 0;
   // Coords of P2 in base frame
-  P2[0] = l_a1_ * std::cos(q[0]);
-  P2[1] = l_a1_ * std::sin(q[0]);
+  P2[0] = P1[0] + l_a1_ * std::cos(q[0]);
+  P2[1] = P1[1] + l_a1_ * std::sin(q[0]);
   // Coords of P4 in base frame
   P4[0] = P5[0] + l_a4_ * std::cos(q[1]);
   P4[1] = P5[1] + l_a4_ * std::sin(q[1]);
@@ -205,7 +206,7 @@ PantographModel::jacobian(Eigen::Vector<double, 2> q)
 
   Eigen::Matrix2d J;
 
-  J << J11, J21,
+  J << J11, J12,
     J21, J22;
 
   return J;

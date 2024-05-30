@@ -87,7 +87,6 @@ protected:
 
   /// Length of the needle in m
   double l_needle_ = 0.2;  //  in m
-
 };
 
 }  // namespace pantograph_library
