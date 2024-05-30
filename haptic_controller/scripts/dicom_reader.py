@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 
 import vtk
-from vtkmodules.all import * 
+from vtkmodules.all import *
 import pydicom
 import os
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
 
-import threading 
-from rclpy.executors import MultiThreadedExecutor
+import threading
+
 
 # Helper class to format slice status message
 class StatusMessage:
@@ -26,11 +27,11 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         super().__init__()
 
         # Event observers for user interaction
-        self.AddObserver('KeyPressEvent',self.key_press_event)
+        self.AddObserver('KeyPressEvent', self.key_press_event)
         self.AddObserver('MouseWheelForwardEvent', self.mouse_wheel_forward_event)
         self.AddObserver('MouseWheelBackwardEvent', self.mouse_wheel_backward_event)
         self.AddObserver('LeftButtonPressEvent', self.on_left_button_down)
-        self.AddObserver('MouseMoveEvent',self.on_mouse_move)
+        self.AddObserver('MouseMoveEvent', self.on_mouse_move)
 
         # Initialization
         self.image_viewer = None
@@ -42,10 +43,22 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         self.min_slice = 0
         self.max_slice = 0
         self.space_coords = []
-        self.image_dims = [1,1]
+        self.image_dims = [1, 1]
         self.pointPublisher = pointPublisher
 
+        # Variables for calibration
+        self.calib_mode = False
+        self.calib_points = []
+        self.image_insertion_point = []
+        self.image_x = []
+        self.image_y = []
+        self.image_z = []
+        self.robot_insertion_point = [0.0, 0.16056, 0.09]
+        self.T_PI = []
+        self.T_WP = np.eye(4)
+
         # Inialize transform for image rotation
+        self.image_view = 'axial'
         self.transform = vtk.vtkTransform()
 
         # Create a custom cursor
@@ -67,11 +80,28 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         self.CursorActor.GetProperty().SetColor(1.0, 0.0, 0.0)
         self.CursorActor.SetMapper(self.CursorMapper)
 
-        #Cursor initialization
+        # Cursor initialization
         self.LastCursorPosition = (0, 0)
-        
 
-    def set_image_viewer(self, image_viewer,n_slices):
+        # Point marker Initialization
+        self.marker_size = 10  # Marker size
+
+        # Create a circle source
+        self.circle = vtk.vtkRegularPolygonSource()
+        self.circle.SetCenter(0, 0, 0)
+        self.circle.SetRadius(self.marker_size)
+        self.circle.SetNumberOfSides(50)
+
+        self.MarkerMapper = vtkPolyDataMapper2D()
+        self.MarkerMapper.SetInputConnection(self.circle.GetOutputPort())
+        self.MarkerMapper.Update()
+
+        # Setup actor for the marker
+        self.MarkerActor = vtk.vtkActor2D()
+        self.MarkerActor.GetProperty().SetColor(0, 1, 0)  # Set the marker color
+        self.MarkerActor.SetMapper(self.MarkerMapper)
+
+    def set_image_viewer(self, image_viewer, n_slices):
         self.image_viewer = image_viewer
         self.min_slice = 0
         self.max_slice = n_slices
@@ -80,7 +110,7 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
 
     def set_status_mapper(self, status_mapper):
         self.status_mapper = status_mapper
-    
+
     def set_dicom_images(self, folder_path):
         # Read all DICOM images in a folder
         self.folder_path = folder_path
@@ -95,8 +125,8 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
             reader.SetFileName(filepath)
             reader.Update()
             self.dicom_images.append(reader.GetOutput())
-        
-        self.image_dims = [reader.GetWidth(),reader.GetHeight()]
+
+        self.image_dims = [reader.GetWidth(), reader.GetHeight()]
 
         self.slice = 0
         self.update_image()
@@ -108,7 +138,6 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
             msg = StatusMessage.format(self.slice, self.max_slice-1)
             self.status_mapper.SetInput(msg)
             self.update_image()
-    
 
     def move_slice_backward(self):
         if self.slice > self.min_slice:
@@ -128,20 +157,23 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
             print("current slice :", self.slice)
             metadata = self.get_metadata(self.slice)
             print(metadata)
-        elif key == 's':
-            print('Displaying sagittal view')
-            self.transform.RotateY(-90)
-            self.transform.RotateZ(90)
-            self.update_image()
+        elif key == 'c':
+            self.calib_mode = True
+            self.calib_points = []
+            print("Calibration mode activated, please click on desired insertion point")
+            self.pointPublisher.get_logger().info('Calibration mode activated, please click on desired insertion point')
         elif key == 'f':
-            print('Displaying frontal view')
-            self.transform.RotateX(-90)
+            self.image_view = 'frontal'
+            print("Displaying frontal view")
             self.update_image()
-        elif key == 'r':
-            print('rotate left')
-            self.transform.RotateY(180)
+        elif key == 'a':
+            self.image_view = 'axial'
+            print("Displaying axial view")
             self.update_image()
-
+        elif key == 's':
+            self.image_view = 'sagittal'
+            print("Displaying sagittal view")
+            self.update_image()
 
     def mouse_wheel_forward_event(self, obj, event):
         # Cycle forward through images on mouse wheel forward
@@ -153,76 +185,88 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
 
     def on_left_button_down(self, obj, event):
         # Mouse pixel coords in window frame
-        click_pos =  self.GetInteractor().GetEventPosition() 
+        click_pos = self.GetInteractor().GetEventPosition()
         # print("Mouse click coordinates in window frame (x, y) :", click_pos)
 
         # Convert pixel coords in window frame to pixel coords in image frame
         image_origin = self.get_upper_left_corner_pixel(self.image_viewer)
         # print('Image origin in window frame (x,y) :'+'\n',image_origin)
-        pixel_coords = np.array([click_pos[0]-image_origin[0],click_pos[1]-image_origin[1],0,1])
-        pixel_coords.shape = (4,1)
-        print('Pixel coords in image frame (x,y) : '+'\n', pixel_coords[0],pixel_coords[1])
 
-        # Get metadata of the current image
-        metadata = self.get_metadata(self.slice)
-        # Origin of the current image (in DICOM base frame)
-        IPP = metadata['ImagePositionPatient']
-        # Orientation of the current image (in DICOM base frame)
-        IOP = metadata['ImageOrientationPatient'] 
-        # Pixel spacing values
-        deltai = metadata['PixelSpacing'][0]
-        deltaj = metadata['PixelSpacing'][1]
+        # Get mouse pixel coords in the DICOM image
+        pixel_coords = np.array([click_pos[0]-image_origin[0], click_pos[1]-image_origin[1], 0, 1])
+        pixel_coords.shape = (4, 1)
+        # print('Pixel coords in image frame (x,y) : '+'\n', pixel_coords[0],pixel_coords[1])
 
-        # Transformation matrix from 2D pixels to 3D voxel in base frame
-        M1 = deltai * np.array([IOP[0],IOP[1],IOP[2],0])
-        M1.shape = (4,1)
-        M2 = deltaj * np.array([IOP[3],IOP[4],IOP[5],0])
-        M2.shape = (4,1)
-        M3 = np.zeros((4,1))
-        M4 = np.array([IPP[0],IPP[1],IPP[2],1])
-        M4.shape = (4,1)
-        M = np.hstack((M1,M2,M3,M4))
-        # print('transformation matrix : '+'\n',M)
+        # Get Homogeneous mouse coords in patient frame :
+        self.space_coords, self.T_PI = self.image_to_patient_frame(pixel_coords)
+        # print('Mouse coords in Patient frame : '+'\n', self.space_coords)
 
-        # Get homogeneous coords in base frame (in mm)
-        self.space_coords = np.matmul(M,pixel_coords)
-        np.reshape(self.space_coords,(4,1))
-        print('Mouse coords in DICOM base frame : '+'\n',self.space_coords[0], 
-              self.space_coords[1], self.space_coords[2])
-        
-        # Set target point coords for pointPublisher 
-        self.pointPublisher.set_target_point(self.space_coords)
-        # Publish target point 
+        # Add marker at clicked position
+        self.add_marker(click_pos)
+
+        self.calib_points.append(self.space_coords)
+        self.calibration(self.calib_points)
+        # print("Homogeneous transformation from World to Patient" + "\n", self.T_WP)
+        # print("Calibration complete !")
+
+        # Apply homogeneous transformation from Patient frame to World frame
+        target_point = np.matmul(self.T_WP, np.transpose(self.space_coords))
+
+        # Publish target point
+        # Scale factor (testing only)
+        delta = 0.001
+        # print("Target point after transform :" + "\n", delta*target_point[:3])
+        self.pointPublisher.set_target_point(delta*target_point[:3])
         self.pointPublisher.point_publisher_callback()
 
-        return 
-    
+        # if (self.calib_mode):
+        #     self.calib_points.append(self.space_coords)
+        #     self.calibration(self.calib_points)
+        #     print("Homogeneous transformation from World to Patient" + "\n", self.T_WP)
+        #     print("Calibration complete !")
+        #     self.pointPublisher.get_logger().info("Calibration complete !")
+        #     self.calib_mode = False
+
+        # else:
+        #     print("Target point before transform :"+"\n", self.space_coords[:3])
+        #     # Apply homogeneous transformation from Patient frame to World frame
+        #     target_point = np.matmul(self.T_WP, np.transpose(self.space_coords))
+
+        #     # Publish target point
+        #     # Scale factor (testing only)
+        #     delta = 0.001
+        #     print("Target point after transform :" + "\n", delta*target_point[:3])
+        #     self.pointPublisher.set_target_point(delta*target_point[:3])
+        #     self.pointPublisher.point_publisher_callback()
+
+        return
+
     def on_mouse_move(self, obj, event):
         # Get the interactor and renderer
         interactor = self.GetInteractor()
         renderer = interactor.GetRenderWindow().GetRenderers().GetFirstRenderer()
-        
+
         # Get mouse position
         x, y = interactor.GetEventPosition()
-        
+
         # Set the cursor bounds
         window_size = interactor.GetRenderWindow().GetSize()
         # self.image_dims = [256,256]
-        scale_factor = 2.6953125 # TODO check why is scale factor needed
-        dims = [scale_factor * self.image_dims[0], scale_factor * self.image_dims[1]] 
+        scale_factor = 2.6953125  # TODO check why is scale factor needed
+        dims = [scale_factor * self.image_dims[0], scale_factor * self.image_dims[1]]
 
-        ofx = (window_size[0] - dims[0])/2 # offset along x axis
-        ofy = (window_size[1] - dims[1])/2 #offset along y axis
-        self.CustomCursor.SetModelBounds(ofx, dims[0] + ofx, 
+        ofx = (window_size[0] - dims[0])/2  # offset along x axis
+        ofy = (window_size[1] - dims[1])/2  # offset along y axis
+        self.CustomCursor.SetModelBounds(ofx, dims[0] + ofx,
                                          ofy, dims[1] + ofy,
                                          -0.5, 0.5)
-        
+
         # Check if cursor position has changed
         if (x, y) != self.LastCursorPosition:
             self.LastCursorPosition = (x, y)
             self.CustomCursor.SetFocalPoint(x, y, 0.0)
             self.CustomCursor.Update()
-            
+
             # Render the updated cursor
             renderer.AddActor(self.CursorActor)
             interactor.Render()
@@ -231,7 +275,18 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
     def update_image(self):
         # Update displayed image based on current image index
         image_data = self.dicom_images[self.slice]
-        
+
+        if self.image_view == 'axial':
+            self.transform = vtk.vtkTransform()
+
+        if self.image_view == 'frontal':
+            # YZ plane (frontal)
+            self.transform.RotateWXYZ(90, 1, 0, 0)  # Rotate around X axis
+
+        if self.image_view == 'sagittal':
+            # XZ plane (sagittal)
+            self.transform.RotateWXYZ(90, 0, 1, 0)  # Rotate around Y axis
+
         # Apply transform to reslice image for current view
         reslice = vtk.vtkImageReslice()
         reslice.SetInputData(image_data)
@@ -242,7 +297,7 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         self.image_viewer.SetInputData(reslice.GetOutput())
         self.image_viewer.Render()
 
-    def get_metadata(self,n_slice):
+    def get_metadata(self, n_slice):
         # Retrieve metadata of the current DICOM image
         current_image_path = os.path.join(self.folder_path, self.dicom_files[n_slice])
         ds = pydicom.dcmread(current_image_path)  # Read metadata from the file
@@ -254,14 +309,14 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
             'Rows': ds.Rows,
             'Columns': ds.Columns,
             'PixelSpacing': ds.PixelSpacing,
-            'Frame of Reference UID' : ds.FrameOfReferenceUID,
+            'Frame of Reference UID': ds.FrameOfReferenceUID,
             'ImageOrientationPatient': ds.ImageOrientationPatient,
             'ImagePositionPatient': ds.ImagePositionPatient,
-            'SliceThickness': ds.SliceThickness  
+            'SliceThickness': ds.SliceThickness,
             # Add more fields as needed
         }
         return metadata
-    
+
     def get_upper_left_corner_pixel(self, viewer):
         # Get the renderer used by vtkImageViewer2
         renderer = viewer.GetRenderer()
@@ -276,8 +331,8 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
 
         # Calculate the offset from the center to the upper left corner in world coordinates
         ul_corner_world = [center_world[0] - dims[0] * spacing[0] / 2,
-                        center_world[1] + dims[1] * spacing[1] / 2,
-                        center_world[2]]
+                            center_world[1] + dims[1] * spacing[1] / 2,
+                            center_world[2]]
 
         # Transform from world coordinates to display coordinates
         renderer.SetWorldPoint(ul_corner_world[0], ul_corner_world[1], ul_corner_world[2], 1.0)
@@ -287,6 +342,93 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         # Convert display coordinates to pixel coordinates
         ul_pixel = [int(ul_corner_display[0]), int(ul_corner_display[1])]
         return ul_pixel
+
+    def image_to_patient_frame(self, pixel_coords):
+        # Get metadata of the current image
+        metadata = self.get_metadata(self.slice)
+        # Origin of the current image (in Patient frame)
+        IPP = metadata['ImagePositionPatient']
+        # Orientation of the current image (in Patient frame)
+        IOP = metadata['ImageOrientationPatient']
+        # Pixel spacing values
+        deltai = metadata['PixelSpacing'][0]
+        deltaj = metadata['PixelSpacing'][1]
+
+        # Transformation matrix from 2D pixels to 3D voxel in base frame
+        C1 = deltai * np.array([IOP[0], IOP[1], IOP[2], 0])  # direction cosines of image x axis
+        C2 = deltaj * np.array([IOP[3], IOP[4], IOP[5], 0])  # direction cosines of image y axis
+        C3 = np.array([0, 0, 0, 0])
+        C4 = np.array([IPP[0], IPP[1], IPP[2], 1])  # Position of the image origin in patient frame
+        T_PI = np.transpose(np.stack((C1, C2, C3, C4)))  # Transformation matrix from Patient to image frame
+        # print('transformation matrix : '+'\n',M)
+
+        # Get homogeneous coords in base frame (in mm)
+        space_coords = np.matmul(T_PI, pixel_coords).ravel()
+        # Convert to 3D coords
+        # space_coords = space_coords[:3]
+        return space_coords, T_PI
+
+    def calibration(self, calib_points):
+        # Define insertion point in DICOM image
+        self.image_insertion_point = calib_points[0][:3]
+        # # Define x axis
+        # self.image_x = (calib_points[1][:3] - self.image_insertion_point)/np.linalg.norm((calib_points[1][:3] - self.image_insertion_point))
+        # # Define y axis
+        # self.image_y = (calib_points[2][:3] - self.image_insertion_point)/np.linalg.norm((calib_points[2][:3] - self.image_insertion_point))
+        # # Compute z axis
+        # self.image_z = np.cross(self.image_x,self.image_y)
+        # # Correct y axis
+        # self.image_y = np.cross(self.image_x,self.image_z)
+
+        # Compute translation from world frame to patient frame
+        # Needed to overlap image_insertion_point and robot_insertion_point
+
+        t_WP = self.robot_insertion_point - self.image_insertion_point
+
+        # Offset (testing only)
+        offset = [0.0,0.3,0.0]
+        t_WP = t_WP + offset
+
+        # Compute rotation needed to align image axis with world frame axis
+        # Rotation from world to image
+        # R_WI = R.from_euler('xyz', [0, 0, 0]).as_matrix()
+        # Rotation from patient to image
+        # R_PI = self.T_PI[:3, :3]
+        # Rotation from world to patient
+        # R_WP = np.matmul(R_WI,np.transpose(R_PI))
+        R_WP = np.eye(3)
+
+        # Compute hogeneous transformation matrix from world frame to patient frame
+        self.T_WP = np.eye(4)
+        self.T_WP[:3, :3] = R_WP
+        self.T_WP[:3, 3] = t_WP
+
+        return
+
+    def add_marker(self, click_pos):
+        # Get the interactor and renderer
+        interactor = self.GetInteractor()
+        renderer = interactor.GetRenderWindow().GetRenderers().GetFirstRenderer()
+
+        # Store mouse cliked position
+        x, y = click_pos
+
+        # Create a circle source
+        self.circle = vtk.vtkRegularPolygonSource()
+        self.circle.SetCenter(x, y, 0)
+        self.circle.SetRadius(self.marker_size)
+        self.circle.SetNumberOfSides(50)  # Smooth circle
+
+        self.MarkerMapper = vtkPolyDataMapper2D()
+        self.MarkerMapper.SetInputConnection(self.circle.GetOutputPort())
+        self.MarkerMapper.Update()
+
+        self.MarkerActor.SetMapper(self.MarkerMapper)
+
+        # Render the updated marker
+        renderer.AddActor(self.CursorActor)
+        interactor.Render()
+
 
 def read_dicom_images(folder_path):
     # Read all DICOM images in a folder
@@ -303,17 +445,18 @@ def read_dicom_images(folder_path):
 
     return dicom_images
 
+
 def start_gui(folder_path, my_interactor_style):
     # Thread info (testing only)
-    print("gui assigned to thread : {}".format(threading.current_thread().name))
-    print("ID of process running gui: {}".format(os.getpid()))
+    print(f"gui assigned to thread : {threading.current_thread().name}")
+    print(f"ID of process running gui: {os.getpid()}")
 
     # Read DICOM images
     dicom_images = read_dicom_images(folder_path)
 
     # Create VTK image viewer
     image_viewer = vtk.vtkImageViewer2()
- 
+
     # Create slice status message
     slice_text_prop = vtkTextProperty()
     slice_text_prop.SetFontFamilyToCourier()
@@ -322,7 +465,7 @@ def start_gui(folder_path, my_interactor_style):
     slice_text_prop.SetJustificationToLeft()
 
     slice_text_mapper = vtkTextMapper()
-    msg = StatusMessage.format(0,len(dicom_images)-1)
+    msg = StatusMessage.format(0, len(dicom_images)-1)
     slice_text_mapper.SetInput(msg)
     slice_text_mapper.SetTextProperty(slice_text_prop)
 
@@ -345,7 +488,7 @@ def start_gui(folder_path, my_interactor_style):
     usage_text_actor = vtkActor2D()
     usage_text_actor.SetMapper(usage_text_mapper)
     usage_text_actor.GetPositionCoordinate().SetCoordinateSystemToNormalizedDisplay()
-    usage_text_actor.GetPositionCoordinate().SetValue(0.02, 1) 
+    usage_text_actor.GetPositionCoordinate().SetValue(0.02, 1)
 
     # Set up render window
     render_window = vtk.vtkRenderWindow()
@@ -358,7 +501,7 @@ def start_gui(folder_path, my_interactor_style):
 
     # Make imageviewer2 and sliceTextMapper visible to our interactorstyle
     # to enable slice status message updates when  scrolling through the slices.
-    my_interactor_style.set_image_viewer(image_viewer,len(dicom_images))
+    my_interactor_style.set_image_viewer(image_viewer, len(dicom_images))
     my_interactor_style.set_status_mapper(slice_text_mapper)
 
     # Make the interactor use our own interactor style
@@ -373,6 +516,9 @@ def start_gui(folder_path, my_interactor_style):
     # Add custom cursor
     image_viewer.GetRenderer().AddActor2D(my_interactor_style.CursorActor)
     my_interactor_style.CustomCursor.Update()
+
+    # Add point markers
+    image_viewer.GetRenderer().AddActor(my_interactor_style.MarkerActor)
 
     # Set DICOM images in the custom interactor
     render_window_interactor.GetInteractorStyle().set_dicom_images(folder_path)
@@ -390,7 +536,6 @@ def start_gui(folder_path, my_interactor_style):
     image_viewer.Render()
     image_viewer.GetRenderWindow().GetInteractor().Start()
 
-    
 
 class pointPublisher(Node):
     # Publishes a point 3D position as a Float64MultiArray
@@ -404,30 +549,28 @@ class pointPublisher(Node):
 
     def point_publisher_callback(self):
         msg = Float64MultiArray()
-        # Point offsets for testing only
-        offset = [100,100,50]
-        
-        if len(self.target_point) == 0 :
-            msg.data = [0.0, 0.0, 0.0] 
-        else : 
-            msg.data.append(np.squeeze(self.target_point[0]) + offset[0])
-            msg.data.append(np.squeeze(self.target_point[1]) + offset[1])
-            msg.data.append(np.squeeze(self.target_point[2]) + offset[2])
-        
-        # Publish the message
-        self.publisher_.publish(msg)  
-        self.get_logger().info('Publishing target_point : %d, %d, %d' % (msg.data[0],msg.data[1],msg.data[2]))    
+        if len(self.target_point) == 0:
+            msg.data = [0.0, 0.0, 0.0]
+        else:
+            msg.data.append(self.target_point[0])
+            msg.data.append(self.target_point[1])
+            msg.data.append(self.target_point[2])
 
-    def set_target_point(self,coords) :
-        self.target_point = coords
+        # Publish the message
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing target_point : {msg.data[0]:f}, {msg.data[1]:f}, {msg.data[2]:f}')
+
+    def set_target_point(self, coords):
+        self.target_point = [coords[0], coords[1], coords[2]]
+        # print('Target point :'+'\n',self.target_point)
+
 
 def run_ros2_node(pointPublisher):
-    print("ros2 node assigned to thread : {}".format(threading.current_thread().name))
-    print("ID of process running ros2 node: {}".format(os.getpid()))
+    print(f"ros2 node assigned to thread : {threading.current_thread().name}")
+    print(f"ID of process running ros2 node: {os.getpid()}")
     while rclpy.ok():
         rclpy.spin_once(pointPublisher, timeout_sec=0.1)
     rclpy.shutdown()
-
 
 
 def main(args=None):
@@ -435,7 +578,7 @@ def main(args=None):
 
     # Path to the folder containing DICOM images
     folder_path = "/home/telecom/dev/ws_pantograph_ros2/src/needle_pantograph_ros2/DicomTestImages/matlab/examples/sample_data/DICOM/digest_article"
-    
+
     # ROS2 node initialization
     rclpy.init(args=args)
     point_publisher = pointPublisher()
@@ -443,12 +586,12 @@ def main(args=None):
     # gui initialization
     gui = MyVtkInteractorStyleImage(point_publisher)
 
-    # Create ros node in a separate thread 
-    t_ros = threading.Thread(target= run_ros2_node,args= (point_publisher,))
+    # Create ros node in a separate thread
+    t_ros = threading.Thread(target=run_ros2_node, args=(point_publisher,))
     t_ros.start()  # Start thread
 
     # Launch DICOM Reader in the main thread
-    start_gui(folder_path,gui)
+    start_gui(folder_path, gui)
 
     # Joint threads once the execution is finished
     t_ros.join()

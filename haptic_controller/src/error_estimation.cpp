@@ -27,6 +27,7 @@
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/buffer.h"
 
+
 class ErrorEstimation : public rclcpp::Node
 {
 public:
@@ -114,8 +115,8 @@ private:
         msg.data = 0.0;
         error_publisher_->publish(msg);
       } else {
-        RCLCPP_INFO(
-          this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
+        // RCLCPP_INFO(
+        //   this->get_logger(), "Angular error between needle and trajectory: %.2f", angle_error);
 
         // Publish angle error
         auto msg = std_msgs::msg::Float64();

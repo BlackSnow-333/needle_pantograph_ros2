@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "haptic_controller/haptic_controller.hpp"
+// #include "pantograph_mimick_controller/src/pantograph_controller_utils.hpp"
 #include <pluginlib/class_list_macros.hpp>
 
 #include "controller_interface/helpers.hpp"
@@ -80,6 +81,12 @@ controller_interface::CallbackReturn HapticController::on_configure(
     "/visualization_marker", 10,
     std::bind(&HapticController::marker_callback, this, std::placeholders::_1));
 
+  // Initialization for motor speed calculation :
+  last_pos_a1_ = 0.0;
+  last_pos_a5_ = 0.0;
+  current_pos_a1_ = 0.0;
+  current_pos_a5_ = 0.0;
+
   RCLCPP_INFO(get_node()->get_logger(), "configure successful");
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -91,14 +98,6 @@ HapticController::command_interface_configuration() const
   controller_interface::InterfaceConfiguration command_interfaces_config;
   command_interfaces_config.type = controller_interface::interface_configuration_type::INDIVIDUAL;
 
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[0] + "/" + HW_IF_POSITION);
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[4] + "/" + HW_IF_POSITION);
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[0] + "/" + HW_IF_VELOCITY);
-  command_interfaces_config.names.push_back(
-    pantograph_joint_names_[4] + "/" + HW_IF_VELOCITY);
   command_interfaces_config.names.push_back(
     pantograph_joint_names_[0] + "/" + HW_IF_EFFORT);
   command_interfaces_config.names.push_back(
@@ -160,7 +159,7 @@ double get_value(
 }
 
 controller_interface::return_type HapticController::update(
-  const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
+  const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
   if (param_listener_->is_old(params_)) {
     if (read_parameters() != controller_interface::CallbackReturn::SUCCESS) {
@@ -178,25 +177,36 @@ controller_interface::return_type HapticController::update(
       state_interface.get_interface_name().c_str(), state_interface.get_value());
   }
 
-  // Get the previous (active) joint positions and velocities
-  double last_pos_a1 =
-    get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_POSITION);
-  double last_vel_a1 =
-    get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_VELOCITY);
-  double last_pos_a5 =
-    get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_POSITION);
-  double last_vel_a5 =
-    get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_VELOCITY);
-
-  Eigen::Vector2d q = Eigen::Vector2d(last_pos_a1, last_pos_a5);
-  Eigen::Vector2d q_dot = Eigen::Vector2d(last_vel_a1, last_vel_a5);
-
-  // Compute the pantograph jacobian:
-  Eigen::Matrix2d J_panto = pantograph_model_.jacobian(q);
-
   // Get the previous (active) joint torques
   double torque_a1 = get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_EFFORT);
   double torque_a5 = get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_EFFORT);
+
+  // ==========================================================
+  // Compute motor rotation speeds using numerical derivation
+  // ==========================================================
+  // Step size :
+  double dt = period.seconds();
+
+  // Get the current joint positions
+  double current_pos_a1_ =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[0], HW_IF_POSITION);
+  double current_pos_a5_ =
+    get_value(name_if_value_mapping_, pantograph_joint_names_[4], HW_IF_POSITION);
+
+  double current_vel_a1 = (current_pos_a1_ - last_pos_a1_) / dt;
+  double current_vel_a5 = (current_pos_a5_ - last_pos_a5_) / dt;
+
+  // Save positions for next calculation
+  if (current_pos_a1_ != last_pos_a1_) {
+    last_pos_a1_ = current_pos_a1_;
+  }
+  if (current_pos_a5_ != last_pos_a5_) {
+    last_pos_a5_ = current_pos_a5_;
+  }
+
+  // Save positions and velocities to state vectors
+  Eigen::Vector2d q = Eigen::Vector2d(current_pos_a1_, current_pos_a5_);
+  Eigen::Vector2d q_dot = Eigen::Vector2d(current_vel_a1, current_vel_a5);
 
   // ==========================================================
   // Compute angle error between desired trajectory (int_marker)
@@ -212,69 +222,108 @@ controller_interface::return_type HapticController::update(
   }
 
   last_error_ = (*angle_error_msg)->data;
+  last_error_ = std::abs(last_error_);  // Check if needed
 
   // Print info in terminal (for testing only)
   // RCLCPP_INFO(get_node()->get_logger(), "angle error : %2f ", last_error_);
 
   // ==========================================================
-  // TODO compute joint torques according to force control law
+  // Compute joint torques according to force control law
   // ==========================================================
   Eigen::Vector3d v_needle, v_target, v_proj;
 
   // Pantograph end effector position :
-  Eigen::Vector2d p = pantograph_model_.fk(q);
+  Eigen::Vector2d P3 = pantograph_model_.fk(q);
+
+  // Compute the pantograph jacobian:
+  Eigen::Matrix2d J_panto = pantograph_model_.jacobian(q);
 
   // Pantograph end effector velocities
-  Eigen::Vector2d p_dot = J_panto * q_dot;
+  Eigen::Vector2d P3_dot = J_panto * q_dot;
 
   // System end effector position :
   Eigen::Vector3d PU = pantograph_model_.fk_system(q);
 
-  // Vector from PI to PU:
-  v_needle[0] = PU[0] - pantograph_model_.PI_x;
-  v_needle[1] = PU[1] - pantograph_model_.PI_y;
-  v_needle[2] = PU[1] - pantograph_model_.PI_z;
+  // Pantograph insertion point
+  Eigen::Vector3d PI;
+  PI << pantograph_model_.PI_x, pantograph_model_.PI_y, pantograph_model_.PI_z;
 
-  // Vector from PI to Ptarget
-  v_target[0] = marker_pos[0] - pantograph_model_.PI_x;
-  v_target[1] = marker_pos[1] - pantograph_model_.PI_y;
-  v_target[2] = marker_pos[2] - pantograph_model_.PI_z;
+  // Needle vector (PI to PU) :
+  v_needle = PU - PI;
 
-  // Projection of v_needle in trajectory path
-  v_proj = -v_needle.norm() * std::cos(last_error_) * v_target;
+  // Needle trajectory vector (PI to Ptarget) :
+  v_target = marker_pos_ - PI;
 
+  // Projection of Needle vector in trajectory path
+  v_proj = -v_needle.norm() * std::cos(last_error_) * v_target.normalized();
 
-  // Force unit vector
-  Eigen::Vector3d v_force;
-  v_force = (v_proj - v_needle) / (v_proj.norm() - v_needle.norm());
+  // F_u :Force felt by the user
+  // F_u Force unit vector
+  Eigen::Vector3d v_u;
+  v_u = v_proj - v_needle;
 
+  // Desired guiding force is proportional to error
+  double F_guide = kp * last_error_;
 
-  // Force felt by the user
-  // Proportional gain adjust according to desired guiding force
-  double Kp = 5;
-  Eigen::Vector3d F_u = Kp * last_error_ * v_force;
+  // F_guide should not exceed 5 N
+  if (F_guide > 5) {
+    F_guide = 5;
+  }
 
-  // Force that the pantograph needs to generate to create F_u
-  // Force magnitude :
-  double alpha = 45; // replace by alpha calculation alpha = f(F_u)
+  // F_u : Force felt by the user at PU
+  Eigen::Vector3d F_u = F_guide * v_u.normalized();
+
+  // F_mech : Force that the pantograph needs to apply to create F_u
+  // Compute intersection point between (v_target,v_needle) plane and (x0,y0) plane
+  Eigen::Vector3d z_0 = Eigen::Vector3d(0, 0, 1);
+  double dot1 = z_0.dot(v_target.normalized());
+  double t_int = 0;
+  // Check if dot1 is not null
+  if (dot1 != 0) {
+    t_int = -z_0.dot(PI) / dot1;
+  } else {
+    t_int = 0;
+  }
+
+  // Coords of the intersection point
+  Eigen::Vector3d P_int = PI + t_int * v_target.normalized();
+
+  // Compute F_mech unit direction vector
+  Eigen::Vector2d v_mech = (P_int.head(2) - P3).normalized();
+
+  // Compute alpha angle
+  double alpha = std::atan2(v_mech[1], v_mech[0]);
+
+  // Compute F_mech magnitude
   double norm_F_mech = pantograph_model_.get_panto_force(PU, F_u.norm(), alpha);
 
-  // F_mech unit vector
-  Eigen::Vector2d v_mech;
-  v_mech << std::cos(alpha), std::sin(alpha);
-  Eigen::Vector2d F_mech = norm_F_mech * v_mech;
+  // Force at the pantograph end effector :
+  //kd_tip : Damping coefficient
+  double kd = 0.15 * kp;
+  Eigen::Vector2d F_mech = norm_F_mech * v_mech - kd * P3_dot;
 
   // Computation of the active joint torques
-  auto tau = J_panto.transpose() * F_mech;
+  Eigen::Vector2d tau = J_panto.transpose() * F_mech;
 
   // ==========================================================
-  // TODO write commands to HW
+  // Write commands to HW
   // ==========================================================
+  // Limit the torque in the joints for security purposes
+  if (std::abs(tau(0)) > 0.2 || std::abs(tau(1)) > 0.2) {
+    RCLCPP_INFO(
+      get_node()->get_logger(), "Torque commands too high !: %.2f, %.2f", tau(0), tau(1));
+    tau(0) = 0.0;
+    tau(1) = 0.0;
+  }
 
-  // write mimics to HW
+  // Info for debug
+  RCLCPP_INFO(
+    get_node()->get_logger(),
+    "Angle error : %f, F_u (in N) : %.2f, F_mech (in N) : %.2f, Tau (in Nm): %.2f, %.2f",
+    last_error_, F_u.norm(), F_mech.norm(), tau(0), tau(1));
+
   command_interfaces_[0].set_value(tau(0));
-  command_interfaces_[4].set_value(tau(1));
-
+  command_interfaces_[1].set_value(tau(1));
   return controller_interface::return_type::OK;
 }
 
@@ -295,6 +344,12 @@ HapticController::read_parameters()
     params_.model_parameters.l_a4,
     params_.model_parameters.l_a5);
 
+  // Update kp gain :
+  kp = params_.model_parameters.kp;
+  // Update kd_tip gain :
+  kd_tip = params_.model_parameters.kd_tip;
+  // Update ratio for dampening coef:
+  ratio = params_.model_parameters.ratio;
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -304,9 +359,10 @@ void haptic_controller::HapticController::marker_callback(
   if (msg->type == visualization_msgs::msg::Marker::LINE_STRIP && !msg->points.empty()) {
     auto points = msg->points;
     auto target_point = points[1];
-    marker_pos << target_point.x, target_point.y, target_point.z;
+    marker_pos_ << target_point.x, target_point.y, target_point.z;
   } else {
-    marker_pos << 0, 0, 0;
+    // If msg is empty default target points to origin
+    marker_pos_ << 0.0, 0.0, 0.0;
   }
 }
 

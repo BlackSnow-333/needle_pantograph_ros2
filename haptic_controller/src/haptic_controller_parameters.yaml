@@ -5,6 +5,30 @@ haptic_controller:
     description: "Model prefix, none by default.",
   }
   model_parameters:
+    kp: {
+      type: double,
+      default_value: 0.5,
+      description: "Proportional gain for force computation",
+      validation: {
+        gt<>: [0],
+      }
+    }
+    kd_tip: {
+      type: double,
+      default_value: 0.5,
+      description: "Dampening gain for force computation",
+      validation: {
+        gt<>: [0],
+      }
+    }
+    ratio: {
+      type: double,
+      default_value: 0.7,
+      description: "ratio for force dampening ceofficient",
+      validation: {
+        gt<>: [0],
+      }
+    }
     l_a1: {
       type: double,
       default_value: 0.1,
