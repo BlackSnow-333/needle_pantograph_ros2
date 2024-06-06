@@ -5,7 +5,7 @@ from vtkmodules.all import *
 import pydicom
 import os
 import numpy as np
-from scipy.spatial.transform import Rotation as R
+# from scipy.spatial.transform import Rotation as R
 
 import rclpy
 from rclpy.node import Node
@@ -54,7 +54,7 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         self.image_y = []
         self.image_z = []
         self.robot_insertion_point = [0.0, 0.16056, 0.09]
-        self.T_PI = []
+        self.T_PI = np.eye(4)
         self.T_WP = np.eye(4)
 
         # Inialize transform for image rotation
@@ -198,46 +198,28 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         # print('Pixel coords in image frame (x,y) : '+'\n', pixel_coords[0],pixel_coords[1])
 
         # Get Homogeneous mouse coords in patient frame :
-        self.space_coords, self.T_PI = self.image_to_patient_frame(pixel_coords)
+        self.space_coords = self.image_to_patient_frame(pixel_coords)
         # print('Mouse coords in Patient frame : '+'\n', self.space_coords)
 
         # Add marker at clicked position
         self.add_marker(click_pos)
 
-        self.calib_points.append(self.space_coords)
-        self.calibration(self.calib_points)
-        # print("Homogeneous transformation from World to Patient" + "\n", self.T_WP)
-        # print("Calibration complete !")
+        if (self.calib_mode):
+            self.calibration(self.space_coords)
+            self.calib_mode = False
+            # print("Homogeneous transformation from World to Patient" + "\n", self.T_WP)
+            # print("Calibration complete !")
 
-        # Apply homogeneous transformation from Patient frame to World frame
-        target_point = np.matmul(self.T_WP, np.transpose(self.space_coords))
+        else:
+            # Apply homogeneous transformation from Patient frame to World frame
+            target_point = np.matmul(self.T_WP, np.transpose(self.space_coords))
 
-        # Publish target point
-        # Scale factor (testing only)
-        delta = 0.001
-        # print("Target point after transform :" + "\n", delta*target_point[:3])
-        self.pointPublisher.set_target_point(delta*target_point[:3])
-        self.pointPublisher.point_publisher_callback()
-
-        # if (self.calib_mode):
-        #     self.calib_points.append(self.space_coords)
-        #     self.calibration(self.calib_points)
-        #     print("Homogeneous transformation from World to Patient" + "\n", self.T_WP)
-        #     print("Calibration complete !")
-        #     self.pointPublisher.get_logger().info("Calibration complete !")
-        #     self.calib_mode = False
-
-        # else:
-        #     print("Target point before transform :"+"\n", self.space_coords[:3])
-        #     # Apply homogeneous transformation from Patient frame to World frame
-        #     target_point = np.matmul(self.T_WP, np.transpose(self.space_coords))
-
-        #     # Publish target point
-        #     # Scale factor (testing only)
-        #     delta = 0.001
-        #     print("Target point after transform :" + "\n", delta*target_point[:3])
-        #     self.pointPublisher.set_target_point(delta*target_point[:3])
-        #     self.pointPublisher.point_publisher_callback()
+            # Publish target point
+            # Scale factor (testing only)
+            delta = 0.001
+            # print("Target point after transform :" + "\n", delta*target_point[:3])
+            self.pointPublisher.set_target_point(delta*target_point[:3])
+            self.pointPublisher.point_publisher_callback()
 
         return
 
@@ -359,26 +341,18 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         C2 = deltaj * np.array([IOP[3], IOP[4], IOP[5], 0])  # direction cosines of image y axis
         C3 = np.array([0, 0, 0, 0])
         C4 = np.array([IPP[0], IPP[1], IPP[2], 1])  # Position of the image origin in patient frame
-        T_PI = np.transpose(np.stack((C1, C2, C3, C4)))  # Transformation matrix from Patient to image frame
+        self.T_PI = np.transpose(np.stack((C1, C2, C3, C4)))  # Transformation matrix from Patient to image frame
         # print('transformation matrix : '+'\n',M)
 
         # Get homogeneous coords in base frame (in mm)
-        space_coords = np.matmul(T_PI, pixel_coords).ravel()
+        space_coords = np.matmul(self.T_PI, pixel_coords).ravel()
         # Convert to 3D coords
         # space_coords = space_coords[:3]
-        return space_coords, T_PI
+        return space_coords
 
-    def calibration(self, calib_points):
+    def calibration(self, calib_point):
         # Define insertion point in DICOM image
-        self.image_insertion_point = calib_points[0][:3]
-        # # Define x axis
-        # self.image_x = (calib_points[1][:3] - self.image_insertion_point)/np.linalg.norm((calib_points[1][:3] - self.image_insertion_point))
-        # # Define y axis
-        # self.image_y = (calib_points[2][:3] - self.image_insertion_point)/np.linalg.norm((calib_points[2][:3] - self.image_insertion_point))
-        # # Compute z axis
-        # self.image_z = np.cross(self.image_x,self.image_y)
-        # # Correct y axis
-        # self.image_y = np.cross(self.image_x,self.image_z)
+        self.image_insertion_point = calib_point[:3]
 
         # Compute translation from world frame to patient frame
         # Needed to overlap image_insertion_point and robot_insertion_point
@@ -386,16 +360,10 @@ class MyVtkInteractorStyleImage(vtkInteractorStyleImage):
         t_WP = self.robot_insertion_point - self.image_insertion_point
 
         # Offset (testing only)
-        offset = [0.0,0.3,0.0]
+        offset = [0.0, 0.0, 0.0]
         t_WP = t_WP + offset
 
         # Compute rotation needed to align image axis with world frame axis
-        # Rotation from world to image
-        # R_WI = R.from_euler('xyz', [0, 0, 0]).as_matrix()
-        # Rotation from patient to image
-        # R_PI = self.T_PI[:3, :3]
-        # Rotation from world to patient
-        # R_WP = np.matmul(R_WI,np.transpose(R_PI))
         R_WP = np.eye(3)
 
         # Compute hogeneous transformation matrix from world frame to patient frame
@@ -577,7 +545,7 @@ def main(args=None):
     # print('VTK Version:', vtkVersion.GetVTKVersion())
 
     # Path to the folder containing DICOM images
-    folder_path = "/home/telecom/dev/ws_pantograph_ros2/src/needle_pantograph_ros2/DicomTestImages/matlab/examples/sample_data/DICOM/digest_article"
+    folder_path = "/home/telecom/dev/ws_pantograph_ros2/src/needle_pantograph_ros2/DicomTestImages"
 
     # ROS2 node initialization
     rclpy.init(args=args)

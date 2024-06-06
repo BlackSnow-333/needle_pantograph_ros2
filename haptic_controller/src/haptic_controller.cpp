@@ -204,6 +204,9 @@ controller_interface::return_type HapticController::update(
     last_pos_a5_ = current_pos_a5_;
   }
 
+  // Check if positions are close to limit
+  // Pantograph home position : Q = [q1, q2] = [3.4025, -0.1901]
+
   // Save positions and velocities to state vectors
   Eigen::Vector2d q = Eigen::Vector2d(current_pos_a1_, current_pos_a5_);
   Eigen::Vector2d q_dot = Eigen::Vector2d(current_vel_a1, current_vel_a5);
@@ -222,7 +225,7 @@ controller_interface::return_type HapticController::update(
   }
 
   last_error_ = (*angle_error_msg)->data;
-  last_error_ = std::abs(last_error_);  // Check if needed
+  // last_error_ = std::abs(last_error_);  // Check if needed
 
   // Print info in terminal (for testing only)
   // RCLCPP_INFO(get_node()->get_logger(), "angle error : %2f ", last_error_);
@@ -266,7 +269,7 @@ controller_interface::return_type HapticController::update(
   double F_guide = kp * last_error_;
 
   // F_guide should not exceed 5 N
-  if (F_guide > 5) {
+  if (std::abs(F_guide) > 5) {
     F_guide = 5;
   }
 
@@ -298,9 +301,9 @@ controller_interface::return_type HapticController::update(
   double norm_F_mech = pantograph_model_.get_panto_force(PU, F_u.norm(), alpha);
 
   // Force at the pantograph end effector :
-  //kd_tip : Damping coefficient
-  double kd = 0.15 * kp;
-  Eigen::Vector2d F_mech = norm_F_mech * v_mech - kd * P3_dot;
+  // kd_tip : Damping coefficient
+  // double kd = 0.15 * kp;
+  Eigen::Vector2d F_mech = norm_F_mech * v_mech - kd_tip * P3_dot;
 
   // Computation of the active joint torques
   Eigen::Vector2d tau = J_panto.transpose() * F_mech;
@@ -309,11 +312,32 @@ controller_interface::return_type HapticController::update(
   // Write commands to HW
   // ==========================================================
   // Limit the torque in the joints for security purposes
-  if (std::abs(tau(0)) > 0.2 || std::abs(tau(1)) > 0.2) {
+  double limit = 0.25;  // in Nm
+
+  if (abs(tau(0)) > limit) {
     RCLCPP_INFO(
-      get_node()->get_logger(), "Torque commands too high !: %.2f, %.2f", tau(0), tau(1));
-    tau(0) = 0.0;
-    tau(1) = 0.0;
+      get_node()->get_logger(), "Torque command tau_0 too high ! ");
+
+    bool sign_tau_0 = std::signbit(tau(0));
+
+    if (sign_tau_0) {
+      tau(0) = limit;
+    } else {
+      tau(0) = -limit;
+    }
+  }
+
+  if (abs(tau(1)) > limit) {
+    RCLCPP_INFO(
+      get_node()->get_logger(), "Torque command tau_1 too high ! ");
+
+    bool sign_tau_1 = std::signbit(tau(1));
+
+    if (sign_tau_1) {
+      tau(1) = limit;
+    } else {
+      tau(1) = -limit;
+    }
   }
 
   // Info for debug

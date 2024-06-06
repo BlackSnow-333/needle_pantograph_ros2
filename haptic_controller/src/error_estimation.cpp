@@ -44,7 +44,7 @@ public:
     // Timer to trigger error calculation and logging every second (only for testing)
     timer_ =
       this->create_wall_timer(
-      std::chrono::seconds(1),
+      std::chrono::milliseconds(2),
       std::bind(&ErrorEstimation::calculate_and_log_error, this));
 
     RCLCPP_INFO(this->get_logger(), "Error Estimation Node has been started.");
@@ -104,11 +104,11 @@ private:
         (needle_vec.norm() * marker_vec.norm()));
 
       if (isnan(angle_error)) {
-        RCLCPP_INFO(
-          this->get_logger(), "Unable to calculate error, target point not defined ! ");
+        // RCLCPP_INFO(
+        //   this->get_logger(), "Unable to calculate error, target point not defined ! ");
 
-        RCLCPP_INFO(
-          this->get_logger(), "Angle error set to %.2f ", 0.0);
+        // RCLCPP_INFO(
+        //   this->get_logger(), "Angle error set to %.2f ", 0.0);
 
         // Publish angle error default value
         auto msg = std_msgs::msg::Float64();
@@ -124,9 +124,9 @@ private:
         error_publisher_->publish(msg);
       }
     } catch (tf2::TransformException & ex) {
-      RCLCPP_ERROR(
-        this->get_logger(), "Could not transform from 'world' to 'needle_interaction_link': %s",
-        ex.what());
+      // RCLCPP_ERROR(
+      //   this->get_logger(), "Could not transform from 'world' to 'needle_interaction_link': %s",
+      //   ex.what());
     }
   }
 

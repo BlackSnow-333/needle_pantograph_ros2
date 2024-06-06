@@ -12,7 +12,7 @@ class NeedleTrajectory(Node):
         super().__init__('needle_trajectory_marker')
 
         # Create subscription to topic /target_point
-        self.subscription = self.create_subscription(Float64MultiArray, '/target_point',
+        self.subscription = self.create_subscription(Float64MultiArray, '/image_points',
                                                      self.listener_callback, 5)
 
         self.subscription  # Prevent unused variable warning
@@ -21,12 +21,12 @@ class NeedleTrajectory(Node):
 
     def listener_callback(self, msg):
         # Ensure the message contains 3 elements
-        if len(msg.data) != 3:
-            self.get_logger().error('Received Float64MultiArray does not contain exactly 3 elements.')
+        if len(msg.data) != 6:
+            self.get_logger().error('Received Float64MultiArray does not contain exactly 6 elements.')
             return
 
         # Extract the point coordinates
-        x, y, z = msg.data
+        x1, y1, z1, x2, y2, z2 = msg.data
 
         # Initialize the marker
         marker = Marker()
@@ -57,9 +57,9 @@ class NeedleTrajectory(Node):
 
         # Create the target point
         target_point = Point()
-        target_point.x = x
-        target_point.y = y
-        target_point.z = z
+        target_point.x = x2
+        target_point.y = y2
+        target_point.z = z2
         marker.points.append(target_point)
 
         self.publisher.publish(marker)

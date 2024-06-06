@@ -105,19 +105,6 @@ def generate_launch_description():
         arguments=['pantograph_mimick_controller'],
     )
 
-    # pantograph_mock_motors_controller_spawner = Node(
-    #     package='controller_manager',
-    #     executable='spawner',
-    #     arguments=['pantograph_mock_motors_controller'],
-    #     condition=IfCondition(use_fake_hardware),
-    # )
-    # pantograph_mock_operator_controller_spawner = Node(
-    #     package='controller_manager',
-    #     executable='spawner',
-    #     arguments=['pantograph_mock_operator_controller'],
-    #     condition=IfCondition(use_fake_hardware),
-    # )
-
     effort_controller_spawner = Node(
         package='controller_manager',
         executable='spawner',
@@ -136,16 +123,22 @@ def generate_launch_description():
         name='error_estimation_node',
     )
 
-    dicom_reader_node = Node(
-        package='haptic_controller',
-        executable='dicom_reader.py',
-        name='dicom_reader_node',
+    new_dicom_reader_node = Node(
+        package='dicom_viewer',
+        executable='mainwindow',
+        name='new_dicom_reader_node',
     )
 
-    # haptic_controller_node = Node(
-    #     package='haptic_controller',
-    #     executable='haptic_controller',
-    #     name='haptic_controller_node',
+    haptic_controller_node = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['haptic_controller'],
+    )
+
+    # joint_position_controller_node = Node(
+    #     package='controller_manager',
+    #     executable='spawner',
+    #     arguments=['joint_position_controller'],
     # )
 
     nodes = [
@@ -154,13 +147,12 @@ def generate_launch_description():
         robot_state_pub_node,
         joint_state_broadcaster_spawner,
         pantograph_mimick_controller_spawner,
-        # pantograph_mock_motors_controller_spawner,
-        # pantograph_mock_operator_controller_spawner,
-        effort_controller_spawner,
+        new_dicom_reader_node,
+        # effort_controller_spawner,
         trajectory_marker_node,
         error_estimation_node,
-        dicom_reader_node,
         # haptic_controller_node,
+        # joint_position_controller,
     ]
 
     return LaunchDescription(declared_arguments + nodes)

@@ -23,10 +23,8 @@ controller_manager:
     # fake_tau_ext_controller:
     #   type: effort_controllers/JointGroupEffortController
 
-    # tool_orientation_controller:
-    #   type: position_controllers/JointGroupPositionController
-    # panto_position_controller:
-    #   type: position_controllers/JointGroupPositionController
+    joint_position_controller:
+      type: position_controllers/JointGroupPositionController
 
     haptic_controller:
       type: haptic_controller/HapticController
@@ -59,17 +57,11 @@ forward_effort_controller:
 #       - fake_tau_ext_1
 #       - fake_tau_ext_5
 
-# tool_orientation_controller:
-#   ros__parameters:
-#     joints:
-#       - tool_theta_joint
-#       - tool_phi_joint
-
-# panto_position_controller:
-#   ros__parameters:
-#     joints:
-#       - panto_a1
-#       - panto_a5
+joint_position_controller:
+  ros__parameters:
+    joints:
+      - panto_a1
+      - panto_a5
 
 haptic_controller:
   ros__parameters:
